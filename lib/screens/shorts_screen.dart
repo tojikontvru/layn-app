@@ -29,7 +29,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
   Future<void> _loadShorts() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final response = await ApiService.instance.get('/load-shorts?page=$_currentPage');
+      final response = await ApiService.instance.shorts(page: _currentPage);
       final shorts = Short.parseFromHtml(response);
       final data = response['data'] ?? {};
       setState(() {
@@ -48,7 +48,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
     setState(() { _loadingMore = true; });
     try {
       final nextPage = _currentPage + 1;
-      final response = await ApiService.instance.get('/load-shorts?page=$nextPage');
+      final response = await ApiService.instance.shorts(page: nextPage);
       final moreShorts = Short.parseFromHtml(response);
       final data = response['data'] ?? {};
       setState(() {

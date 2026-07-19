@@ -102,11 +102,16 @@ class ApiService {
 
   // Home
   Future<Map<String, dynamic>> home({int page = 1}) async {
-    return get('/load-main?page=$page');
+    return get('/main-page?page=$page');
   }
 
-  // Shorts
+  // Shorts — отдельный URL, НЕ через baseUrl
   Future<Map<String, dynamic>> shorts({int page = 1}) async {
-    return get('/load-shorts?page=$page');
+    final uri = Uri.parse('https://layn.su/load-shorts?page=$page');
+    final response = await http.get(uri, headers: {'Accept': 'application/json'});
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw HttpException('HTTP ${response.statusCode}: ${response.body}');
   }
 }

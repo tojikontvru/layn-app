@@ -24,7 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadVideos() async {
     try {
-      final response = await ApiService.instance.get('/load-main');
+      final response = await ApiService.instance.get('/main-page');
       final videos = (response['data']['videos'] as List<dynamic>)
           .map((j) => Video.fromJson(j as Map<String, dynamic>))
           .where((v) => !v.isShortsVideo)
