@@ -39,8 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadShortsUrls() async {
     try {
       final urls = await ApiService.instance.shortsUrls();
-      if (mounted) setState(() => _shortsUrls.addAll(urls));
-      debugPrint('SHORTS URLs loaded: ${_shortsUrls.length} urls');
+      // Нормализуем для сравнения
+      final normalized = urls.map(normalizeUrl).toSet();
+      if (mounted) setState(() => _shortsUrls.addAll(normalized));
+      debugPrint('SHORTS URLs loaded: ${_shortsUrls.length} urls (raw: ${urls.length})');
+      if (_shortsUrls.isNotEmpty) {
+        debugPrint('SHORTS sample URLs: ${_shortsUrls.take(3).join('\n  ')}');
+      }
     } catch (e) {
       debugPrint('Failed to load shorts URLs: $e');
     }
@@ -69,11 +74,19 @@ class _HomeScreenState extends State<HomeScreen> {
       final d = await ApiService.instance.home(page: _page, category: _selectedCategory);
       final videosRaw = (d['data']?['videos'] as List? ?? []);
       debugPrint('HOME videos: ${videosRaw.length}, shorts urls: ${_shortsUrls.length}');
+      
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) => !v.isShorts && !_shortsUrls.contains(v.videoUrl))
-          .toList();
-      debugPrint('HOME after filter: ${list.length} videos');
+          .where((v) {
+        // Исключаем если isShorts=true
+        if (v.isShorts) return false;
+        // Исключаем по совпадению URL (нормализованное сравнение)
+        final normalized = normalizeUrl(v.videoUrl);
+        if (normalized.isNotEmpty && _shortsUrls.contains(normalized)) return false;
+        return true;
+      }).toList();
+      
+      debugPrint('HOME after filter: ${list.length} videos (removed ${videosRaw.length - list.length} shorts)');
       setState(() {
         _videos.clear();
         _videos.addAll(list);

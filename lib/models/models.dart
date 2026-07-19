@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -6,6 +7,18 @@ String abs(String url) {
   if (url.startsWith('http')) return url;
   if (url.startsWith('//')) return 'https:$url';
   return 'https://layn.su$url';
+}
+
+/// Нормализует URL для сравнения: убирает query-параметры, trailing slash, lowercase
+String normalizeUrl(String url) {
+  if (url.isEmpty) return url;
+  try {
+    final u = Uri.parse(url);
+    // Убираем query и fragment, lowercase path
+    return '${u.scheme}://${u.host}${u.path}'.toLowerCase().replaceAll(RegExp(r'/+$'), '');
+  } catch (_) {
+    return url.toLowerCase().replaceAll(RegExp(r'\?.*'), '').replaceAll(RegExp(r'/+$'), '');
+  }
 }
 
 String timeAgo(String? dateStr) {
@@ -166,13 +179,16 @@ class Short {
   static List<Short> _parseHtml(String html) {
     final doc = html_parser.parse(html);
     final shorts = <Short>[];
+    final seenUrls = <String>{};
     int idx = 0;
 
+    // Strategy 1: <video> tags
     for (final v in doc.querySelectorAll('video')) {
       final src = v.querySelector('source')?.attributes['src'] ??
           v.attributes['src'] ??
           '';
-      if (src.isEmpty) continue;
+      if (src.isEmpty || seenUrls.contains(src)) continue;
+      seenUrls.add(src);
 
       String title = '';
       String poster = v.attributes['poster'] ?? '';
@@ -199,6 +215,62 @@ class Short {
       ));
     }
 
+    // Strategy 2: <a> tags with video href
+    for (final a in doc.querySelectorAll('a[href]')) {
+      final href = a.attributes['href'] ?? '';
+      if (!RegExp(r'\.(mp4|mov|m3u8|webm)(\?|$)', caseSensitive: false).hasMatch(href)) continue;
+      if (seenUrls.contains(href)) continue;
+      seenUrls.add(href);
+
+      String title = a.attributes['title'] ?? a.text.trim();
+      int views = 0;
+      final vm = RegExp(r'(\d[\d\s]*)').firstMatch(a.text);
+      if (vm != null) views = int.tryParse(vm.group(1)!.replaceAll(' ', '')) ?? 0;
+
+      shorts.add(Short(
+        id: ++idx,
+        title: title,
+        videoUrl: abs(href),
+        thumbnailUrl: '',
+        views: views,
+      ));
+    }
+
+    // Strategy 3: <source> tags (outside <video>)
+    for (final s in doc.querySelectorAll('source[src]')) {
+      final src = s.attributes['src'] ?? '';
+      if (!RegExp(r'\.(mp4|mov|m3u8|webm)(\?|$)', caseSensitive: false).hasMatch(src)) continue;
+      if (seenUrls.contains(src)) continue;
+      seenUrls.add(src);
+      shorts.add(Short(
+        id: ++idx,
+        title: '',
+        videoUrl: abs(src),
+        thumbnailUrl: '',
+        views: 0,
+      ));
+    }
+
+    // Strategy 4: Any element with data-video or data-src attributes
+    for (final el in doc.querySelectorAll('[data-video],[data-src],[data-url]')) {
+      final videoUrl = el.attributes['data-video'] ??
+          el.attributes['data-src'] ??
+          el.attributes['data-url'] ??
+          '';
+      if (videoUrl.isEmpty || seenUrls.contains(videoUrl)) continue;
+      seenUrls.add(videoUrl);
+      String title = el.attributes['title'] ?? el.text.trim();
+      if (title.length > 100) title = title.substring(0, 100);
+      shorts.add(Short(
+        id: ++idx,
+        title: title,
+        videoUrl: abs(videoUrl),
+        thumbnailUrl: abs(el.attributes['data-thumb'] ?? el.attributes['data-poster'] ?? ''),
+        views: 0,
+      ));
+    }
+
+    debugPrint('HTML parsed: ${shorts.length} shorts from HTML');
     return shorts;
   }
 }

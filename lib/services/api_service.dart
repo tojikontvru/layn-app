@@ -134,23 +134,32 @@ class ApiService {
     final urls = <String>{};
     try {
       for (int page = 1; page <= 3; page++) {
-        final r = await http.get(
-          Uri.parse('$shortsUrl?page=$page'),
-          headers: {'Accept': 'application/json'},
-        );
-        if (r.statusCode != 200) break;
+        // Загружаем БЕЗ Accept: application/json — как shorts_screen.dart
+        final r = await http.get(Uri.parse('$shortsUrl?page=$page'));
+        if (r.statusCode != 200) {
+          debugPrint('shortsUrls page=$page: HTTP ${r.statusCode}');
+          break;
+        }
         final d = jsonDecode(r.body) as Map<String, dynamic>;
-        final shorts = Short.fromResponse(d);
-        if (shorts.isEmpty) break;
-        for (final s in shorts) {
-          if (s.videoUrl.isNotEmpty) urls.add(s.videoUrl);
+        final shortsList = Short.fromResponse(d);
+        debugPrint('shortsUrls page=$page: ${shortsList.length} shorts');
+        if (shortsList.isEmpty) break;
+        for (final s in shortsList) {
+          if (s.videoUrl.isNotEmpty) {
+            urls.add(normalizeUrl(s.videoUrl));
+          }
         }
         final meta = d['data'] ?? {};
         final lastPage = meta['last_page'] ?? 1;
         if (page >= lastPage) break;
       }
-    } catch (_) {}
-    debugPrint('SHORTS URLs loaded: ${urls.length}');
+    } catch (e) {
+      debugPrint('shortsUrls error: $e');
+    }
+    debugPrint('SHORTS URLs total: ${urls.length}');
+    if (urls.isNotEmpty) {
+      debugPrint('SHORTS sample: ${urls.take(3).join(', ')}');
+    }
     return urls;
   }
 }
