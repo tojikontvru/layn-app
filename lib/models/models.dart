@@ -182,7 +182,7 @@ class Short {
       String videoUrl = '';
       if (sourceTag != null) {
         videoUrl = sourceTag.attributes['src'] ?? '';
-        if (videoUrl.isEmpty && sourceTag.tagName.toLowerCase() == 'video') {
+        if (videoUrl.isEmpty && sourceTag.localName?.toLowerCase() == 'video') {
           videoUrl = sourceTag.attributes['src'] ?? '';
         }
       }

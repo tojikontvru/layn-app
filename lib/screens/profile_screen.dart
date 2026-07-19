@@ -48,7 +48,7 @@ class ProfileScreen extends StatelessWidget {
                   backgroundColor: const Color(0xFF333333),
                   backgroundImage: (user.avatar ?? '').isNotEmpty ? NetworkImage(user.avatar!) : null,
                   child: (user.avatar == null || user.avatar!.isEmpty)
-                      ? Text(user.username[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 20))
+                      ? Text((user.username ?? '?')[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 20))
                       : null,
                 ),
                 const SizedBox(width: 12),
@@ -56,7 +56,7 @@ class ProfileScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(user.channelName ?? user.username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text(user.channelName ?? user.username ?? '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 2),
                       Text('@${user.username}', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
                     ],

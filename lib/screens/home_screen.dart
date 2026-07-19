@@ -66,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.all(8),
         itemCount: _videos.length,
-        itemBuilder: (context, index) => VideoCard(video: _videos[index]),
+        itemBuilder: (context, index) => VideoCard(video: _videos[index], onTap: () {}),
       ),
     );
   }
