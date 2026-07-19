@@ -42,14 +42,14 @@ class ApiService {
 
   // Auth
   Future<Map<String, dynamic>> login(String username, String password) async {
-    final data = await post('/api/login', body: {'username': username, 'password': password});
+    final data = await post('/login', body: {'username': username, 'password': password});
     final token = data['data']?['token'] ?? data['token'];
     if (token != null) _token = token.toString();
     return data;
   }
 
   Future<Map<String, dynamic>> register(String username, String email, String password, String firstname) async {
-    final data = await post('/api/register', body: {
+    final data = await post('/register', body: {
       'username': username,
       'email': email,
       'password': password,
@@ -61,13 +61,13 @@ class ApiService {
   }
 
   Future<void> logout() async {
-    try { await post('/api/logout'); } catch (_) {}
+    try { await post('/logout'); } catch (_) {}
     _token = null;
   }
 
   Future<VideoUser?> me() async {
     try {
-      final data = await get('/api/user/profile');
+      final data = await get('/user/profile');
       final u = data['data'] ?? data['user'];
       if (u == null) return null;
       return VideoUser(
@@ -83,7 +83,7 @@ class ApiService {
   // Comments
   Future<List<Comment>> comments(int videoId) async {
     try {
-      final data = await get('/api/video/$videoId/comments');
+      final data = await get('/video/$videoId/comments');
       final list = data['data']?['comments'] ?? data['data'] ?? [];
       return (list as List? ?? []).map((e) => Comment.fromJson(e as Map<String, dynamic>)).toList();
     } catch (_) {
@@ -92,17 +92,17 @@ class ApiService {
   }
 
   Future<void> comment(int videoId, String text) async {
-    await post('/api/video/$videoId/comment', body: {'comment': text});
+    await post('/video/$videoId/comment', body: {'comment': text});
   }
 
   // Subscribe
   Future<void> subscribe(int userId) async {
-    await post('/api/user/$userId/subscribe');
+    await post('/user/$userId/subscribe');
   }
 
   // Home
   Future<Map<String, dynamic>> home({int page = 1}) async {
-    return get('/main-page?page=$page');
+    return get('/home?page=$page');
   }
 
   // Shorts — отдельный URL, НЕ через baseUrl

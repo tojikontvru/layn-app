@@ -144,7 +144,7 @@ class Short {
 
     // Each short is a <div class="short-item"> or similar container
     // with a <video> tag and title/views info
-    final shortItems = document.querySelectorAll('.short-item, .short-card, .col-6, .col-md-3, [class*="short"]');
+    final shortItems = document.querySelectorAll('.short-item');
 
     if (shortItems.isEmpty) {
       // Fallback: try to find video tags directly
