@@ -294,44 +294,78 @@ class _ShortsItemState extends State<_ShortsItem> {
   }
 
   Widget _buildCommentsSheet(AuthProvider auth) {
-    return Positioned(left: 0, right: 0, bottom: 0, height: MediaQuery.of(context).size.height * 0.5,
-      child: GestureDetector(onVerticalDragEnd: (_) => setState(() => _showComments = false),
-        child: Container(decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    final video = widget.video;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    return Positioned(
+      left: 0, right: 0, bottom: 0, height: MediaQuery.of(context).size.height * 0.5,
+      child: GestureDetector(
+        onVerticalDragEnd: (_) => setState(() => _showComments = false),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
           child: Column(children: [
-            Container(margin: const EdgeInsets.only(top: 8), width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(2))),
-            Padding(padding: const EdgeInsets.all(12),
-              child: Text('Комментарии (${v.commentsCount ?? 0})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16))),
+            Container(
+              margin: const EdgeInsets.only(top: 8), width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text('Комментарии (${video.commentsCount ?? 0})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
             const Divider(color: Colors.grey, height: 1),
             Expanded(child: _loadingComments
               ? const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)))
               : _comments.isEmpty
                 ? const Center(child: Text('Пока нет комментариев', style: TextStyle(color: Colors.grey)))
-                : ListView.builder(padding: const EdgeInsets.all(12), itemCount: _comments.length, itemBuilder: (c, i) {
-                    final cm = _comments[i];
-                    return Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      CircleAvatar(radius: 14, backgroundColor: const Color(0xFF333333),
-                        backgroundImage: (cm.user?.avatar ?? '').isNotEmpty ? CachedNetworkImageProvider(cm.user!.avatar!) : null,
-                        child: (cm.user?.avatar ?? '').isEmpty
-                          ? Text((cm.user?.username ?? '?')[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11)) : null),
-                      const SizedBox(width: 10),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(cm.user?.channelName ?? cm.user?.username ?? '', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-                        const SizedBox(height: 2),
-                        Text(cm.comment, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                      ])),
-                    ]));
-                  })),
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _comments.length,
+                    itemBuilder: (c, i) {
+                      final cm = _comments[i];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          CircleAvatar(
+                            radius: 14, backgroundColor: const Color(0xFF333333),
+                            backgroundImage: (cm.user?.avatar ?? '').isNotEmpty ? CachedNetworkImageProvider(cm.user!.avatar!) : null,
+                            child: (cm.user?.avatar ?? '').isEmpty
+                              ? Text((cm.user?.username ?? '?')[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11))
+                              : null,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(cm.user?.channelName ?? cm.user?.username ?? '', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                            const SizedBox(height: 2),
+                            Text(cm.comment, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                          ])),
+                        ]),
+                      );
+                    },
+                  ),
+            ),
             if (auth.isAuth)
-              Container(padding: EdgeInsets.only(left: 12, right: 12, bottom: MediaQuery.of(context).padding.bottom + 8, top: 8),
+              Padding(
+                padding: EdgeInsets.only(left: 12, right: 12, bottom: bottomPad + 8, top: 8),
                 child: Row(children: [
-                  Expanded(child: TextField(controller: _commentCtrl, style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(hintText: 'Написать комментарий...', hintStyle: TextStyle(color: Colors.grey[600]),
-                      filled: true, fillColor: const Color(0xFF2A2A2A),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none))),
+                  Expanded(
+                    child: TextField(
+                      controller: _commentCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Написать комментарий...',
+                        hintStyle: TextStyle(color: Colors.grey[600]),
+                        filled: true,
+                        fillColor: const Color(0xFF2A2A2A),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   IconButton(icon: const Icon(Icons.send, color: Color(0xFFE53935)), onPressed: _sendComment),
-                ])),
+                ]),
+              ),
           ]),
         ),
       ),
