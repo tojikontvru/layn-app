@@ -100,7 +100,7 @@ class _HomeBodyState extends State<_HomeBody> {
     try {
       final api = context.read<ApiService>();
       final data = await api.home(page: 1);
-      final list = (data['videos'] as List? ?? []).map((e) => Video.fromJson(e as Map<String, dynamic>)).toList();
+      final list = (data['videos'] as List? ?? []).map((e) => Video.fromJson(e as Map<String, dynamic>)).where((v) => !v.isShorts).toList();
       if (mounted) {
         setState(() {
           _videos..clear()..addAll(list);
@@ -120,7 +120,7 @@ class _HomeBodyState extends State<_HomeBody> {
     try {
       final api = context.read<ApiService>();
       final data = await api.home(page: _currentPage + 1);
-      final list = (data['videos'] as List? ?? []).map((e) => Video.fromJson(e as Map<String, dynamic>)).toList();
+      final list = (data['videos'] as List? ?? []).map((e) => Video.fromJson(e as Map<String, dynamic>)).where((v) => !v.isShorts).toList();
       if (mounted) {
         setState(() {
           _videos.addAll(list);
