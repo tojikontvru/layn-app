@@ -250,7 +250,7 @@ class _ShortsItemState extends State<_ShortsItem> {
         const SizedBox(height: 20),
         _sideBtn(Icons.reply, 'Поделиться', Colors.white, () {}),
         const SizedBox(height: 20),
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: Color(0xFF333333), borderRadius: BorderRadius.circular(8),
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: Color(0xFF333333), borderRadius: BorderRadius.circular(8)),
           child: const Icon(Icons.music_note, color: Colors.white, size: 20)),
       ])),
       // Bottom info

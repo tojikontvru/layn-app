@@ -143,7 +143,7 @@ class _HomeBodyState extends State<_HomeBody> {
           padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top, left: 12, right: 12, bottom: 8),
           child: Row(children: [
             Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: const Color(0xFFE53935), borderRadius: BorderRadius.circular(8)),
-            const Icon(Icons.play_arrow, color: Colors.white, size: 20)),
+              child: const Icon(Icons.play_arrow, color: Colors.white, size: 20)),
             const SizedBox(width: 8),
             const Text('Layn', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22)),
             const Spacer(),
