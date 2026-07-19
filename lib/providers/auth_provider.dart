@@ -5,19 +5,16 @@ import '../services/api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiService api;
-  User? _user;
+  VideoUser? _user;
   bool _loading = false;
-  bool _initialized = false;
 
   AuthProvider({required this.api});
 
-  User? get user => _user;
+  VideoUser? get user => _user;
   bool get isAuth => _user != null;
   bool get loading => _loading;
-  bool get initialized => _initialized;
 
   Future<void> init() async {
-    _initialized = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -26,7 +23,7 @@ class AuthProvider extends ChangeNotifier {
         _user = await api.me();
         notifyListeners();
       }
-    } catch (e) {
+    } catch (_) {
       api.setToken(null);
     }
   }
@@ -36,11 +33,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await api.login(username, password);
-      final token = data['token']?.toString();
+      final token = data['data']?['token'] ?? data['token'];
       if (token != null) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', token);
-        api.setToken(token);
+        await prefs.setString('token', token.toString());
         _user = await api.me();
       }
     } finally {
@@ -54,11 +50,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await api.register(username, email, password, firstname);
-      final token = data['token']?.toString();
+      final token = data['data']?['token'] ?? data['token'];
       if (token != null) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', token);
-        api.setToken(token);
+        await prefs.setString('token', token.toString());
         _user = await api.me();
       }
     } finally {

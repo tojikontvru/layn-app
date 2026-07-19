@@ -3,7 +3,6 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -30,7 +29,6 @@ class _VideoScreenState extends State<VideoScreen> {
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable();
     _initPlayer();
     _loadComments();
     _loadRelated();
@@ -39,7 +37,7 @@ class _VideoScreenState extends State<VideoScreen> {
   void _initPlayer() {
     final url = widget.video.videoUrl;
     if (url.isEmpty) return;
-    _vp = VideoPlayerController.networkUrl(Uri.parse(url), httpHeaders: const {'Connection': 'keep-alive'});
+    _vp = VideoPlayerController.networkUrl(Uri.parse(url));
     _vp!.initialize().then((_) {
       if (!mounted) return;
       _chewie = ChewieController(videoPlayerController: _vp!, autoPlay: true, allowFullScreen: true, allowMuting: true, showControls: true);
@@ -47,35 +45,42 @@ class _VideoScreenState extends State<VideoScreen> {
     }).catchError((_) {
       Future.delayed(const Duration(seconds: 3), () { if (mounted) _initPlayer(); });
     });
-    _vp!.addListener(() {
-      if (!mounted) return;
-      if (_vp!.value.errorDescription != null) {
-        Future.delayed(const Duration(seconds: 3), () { if (mounted) _initPlayer(); });
-      }
-    });
   }
 
   Future<void> _loadComments() async {
     setState(() => _loadingComments = true);
-    try { _comments = await context.read<ApiService>().comments(widget.video.id); } catch (_) {}
+    try {
+      _comments = await ApiService.instance.comments(widget.video.id);
+    } catch (_) {}
     if (mounted) setState(() => _loadingComments = false);
   }
 
   Future<void> _loadRelated() async {
     try {
-      final data = await context.read<ApiService>().home(page: 1);
-      final list = (data['videos'] as List? ?? []).map((e) => Video.fromJson(e as Map<String, dynamic>)).toList();
+      final data = await ApiService.instance.home(page: 1);
+      final list = (data['data']?['videos'] as List? ?? [])
+          .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .where((v) => !v.isShortsVideo)
+          .toList();
       if (mounted) setState(() => _related = list.where((v) => v.id != widget.video.id).take(10).toList());
     } catch (_) {}
   }
 
   Future<void> _sendComment() async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isAuth) { Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())); return; }
+    if (!auth.isAuth) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+      return;
+    }
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
-    try { await context.read<ApiService>().comment(widget.video.id, text); _commentCtrl.clear(); await _loadComments(); }
-    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()))); }
+    try {
+      await ApiService.instance.comment(widget.video.id, text);
+      _commentCtrl.clear();
+      await _loadComments();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   @override
@@ -84,7 +89,6 @@ class _VideoScreenState extends State<VideoScreen> {
     _chewie?.dispose();
     _commentCtrl.dispose();
     _scroll.dispose();
-    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -124,12 +128,10 @@ class _VideoScreenState extends State<VideoScreen> {
                   const SizedBox(width: 10),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(v.user?.channelName ?? v.user?.username ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    Text('${v.user?.subscribers ?? 0} подписчиков', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
                   ])),
                   ElevatedButton(
                     onPressed: () async {
                       if (!auth.isAuth) { Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())); return; }
-                      try { await context.read<ApiService>().subscribe(v.user!.id); } catch (_) {}
                     },
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
                     child: const Text('Подписаться', style: TextStyle(color: Colors.white))),

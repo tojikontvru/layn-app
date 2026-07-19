@@ -1,1 +1,6 @@
-const String baseUrl = 'https://layn.su/api/v1';
+import 'dart:io';
+
+const String baseUrl = 'https://layn.su';
+const String apiPrefix = '';
+
+String? authToken;
