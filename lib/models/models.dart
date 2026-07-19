@@ -2,6 +2,13 @@ import 'dart:io';
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as dom;
 
+String _abs(String url) {
+  if (url.isEmpty) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('//')) return 'https:$url';
+  return 'https://layn.su$url';
+}
+
 /// Video model for regular horizontal videos
 class Video {
   final int id;
@@ -34,26 +41,25 @@ class Video {
     this.commentsCount,
   });
 
-  /// User info shorthand
   VideoUser? get user => (username.isNotEmpty || (channelName?.isNotEmpty ?? false))
       ? VideoUser(username: username, channelName: channelName, avatar: avatar)
       : null;
 
-  String get thumb => thumbnailUrl;
+  String get thumb => _abs(thumbnailUrl);
 
   factory Video.fromJson(Map<String, dynamic> json) {
     return Video(
       id: json['id'] ?? 0,
       title: json['title'] ?? '',
       description: json['description'] ?? '',
-      thumbnailUrl: json['thumbnail_url'] ?? '',
+      thumbnailUrl: json['thumbnail_url'] ?? json['thumb'] ?? '',
       videoUrl: json['video_url'] ?? '',
       username: json['username'] ?? '',
       views: json['views'] ?? 0,
       duration: json['duration'] ?? '00:00',
       createdAt: json['created_at'] ?? '',
       isShortsVideo: json['is_shorts_video'] ?? false,
-      channelName: json['channel_name'],
+      channelName: json['channel_name'] ?? json['firstname'],
       avatar: json['avatar'],
       commentsCount: json['comments_count'],
     );
@@ -62,21 +68,13 @@ class Video {
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
-        'description': description,
         'thumbnail_url': thumbnailUrl,
         'video_url': videoUrl,
         'username': username,
         'views': views,
-        'duration': duration,
-        'created_at': createdAt,
-        'is_shorts_video': isShortsVideo,
-        'channel_name': channelName,
-        'avatar': avatar,
-        'comments_count': commentsCount,
       };
 }
 
-/// User info for video cards
 class VideoUser {
   final String? username;
   final String? channelName;
@@ -85,7 +83,6 @@ class VideoUser {
   VideoUser({this.username, this.channelName, this.avatar});
 }
 
-/// Comment model
 class Comment {
   final int id;
   final String comment;
@@ -116,8 +113,6 @@ class Short {
   final String thumbnailUrl;
   final String username;
   final int views;
-  final String? duration;
-  final String? channelName;
 
   Short({
     required this.id,
@@ -126,12 +121,10 @@ class Short {
     required this.thumbnailUrl,
     required this.username,
     required this.views,
-    this.duration,
-    this.channelName,
   });
 
   /// Parse shorts from HTML returned by /load-shorts
-  /// The API returns: { status: "success", data: { videos: "<html>...</html>" } }
+  /// API: { status: "success", data: { videos: "<html>...</html>" } }
   static List<Short> parseFromHtml(Map<String, dynamic> response) {
     final data = response['data'];
     if (data == null) return [];
@@ -141,116 +134,113 @@ class Short {
 
     final document = html_parser.parse(htmlContent);
     final shorts = <Short>[];
+    final seen = <String>{};
 
-    // Each short is a <div class="short-item"> or similar container
-    // with a <video> tag and title/views info
-    final shortItems = document.querySelectorAll('.short-item');
+    // Strategy 1: find <video> tags — the most reliable
+    final videoTags = document.querySelectorAll('video');
+    for (var i = 0; i < videoTags.length; i++) {
+      final vtag = videoTags[i];
+      final source = vtag.querySelector('source');
+      String vurl = source?.attributes['src'] ?? vtag.attributes['src'] ?? '';
+      String poster = vtag.attributes['poster'] ?? '';
 
-    if (shortItems.isEmpty) {
-      // Fallback: try to find video tags directly
-      final videoTags = document.querySelectorAll('video');
-      for (var i = 0; i < videoTags.length; i++) {
-        final videoTag = videoTags[i];
-        final sourceTag = videoTag.querySelector('source');
-        final videoUrl = sourceTag?.attributes['src'] ?? videoTag.attributes['src'] ?? '';
+      if (vurl.isEmpty) continue;
+      if (seen.contains(vurl)) continue;
+      seen.add(vurl);
 
-        if (videoUrl.isEmpty) continue;
-
-        // Try to find parent container for title/views
-        final parent = videoTag.parent;
-        final title = _extractText(parent, '.short-title, .video-title, h5, h4, .title');
-        final viewsText = _extractText(parent, '.views, .view-count, .short-view, span');
-        final views = _parseViews(viewsText);
-
-        shorts.add(Short(
-          id: i + 1,
-          title: title,
-          videoUrl: _makeAbsoluteUrl(videoUrl),
-          thumbnailUrl: '',
-          username: '',
-          views: views,
-        ));
+      // Walk up to find title, views in parent elements
+      dom.Element? parent = vtag.parent;
+      String title = '';
+      int views = 0;
+      for (var depth = 0; depth < 5 && parent != null; depth++) {
+        if (title.isEmpty) {
+          final h = parent.querySelector('h5, h4, h3, .title, .short-title, a[title]');
+          if (h != null) title = h.text.trim();
+          if (title.isEmpty) title = parent.attributes['title'] ?? '';
+        }
+        if (views == 0) {
+          final vEl = parent.querySelector('.views, .view-count, .fa-eye, [class*="view"]');
+          if (vEl != null) {
+            final m = RegExp(r'(\d+)').firstMatch(vEl.text);
+            if (m != null) views = int.tryParse(m.group(1) ?? '0') ?? 0;
+          }
+        }
+        parent = parent.parent;
       }
-      return shorts;
+
+      shorts.add(Short(
+        id: i + 1,
+        title: title,
+        videoUrl: _abs(vurl),
+        thumbnailUrl: _abs(poster),
+        username: '',
+        views: views,
+      ));
     }
 
-    for (var i = 0; i < shortItems.length; i++) {
-      final item = shortItems[i];
+    // Strategy 2: find <a> tags with video links
+    if (shorts.isEmpty) {
+      final links = document.querySelectorAll('a[href]');
+      for (var i = 0; i < links.length; i++) {
+        final a = links[i];
+        final href = a.attributes['href'] ?? '';
+        if (!href.contains('/video/') && !href.contains('/shorts/')) continue;
 
-      // Find video source
-      final sourceTag = item.querySelector('video source, video');
-      String videoUrl = '';
-      if (sourceTag != null) {
-        videoUrl = sourceTag.attributes['src'] ?? '';
-        if (videoUrl.isEmpty && sourceTag.localName?.toLowerCase() == 'video') {
-          videoUrl = sourceTag.attributes['src'] ?? '';
+        final img = a.querySelector('img');
+        String thumbnail = img?.attributes['src'] ?? img?.attributes['data-src'] ?? '';
+        String title = a.attributes['title'] ?? '';
+        if (title.isEmpty) {
+          final h = a.querySelector('h5, h4, h3, .title');
+          if (h != null) title = h.text.trim();
+        }
+
+        if (thumbnail.isNotEmpty && !seen.contains(href)) {
+          seen.add(href);
+          shorts.add(Short(
+            id: i + 1,
+            title: title,
+            videoUrl: _abs(href),
+            thumbnailUrl: _abs(thumbnail),
+            username: '',
+            views: 0,
+          ));
         }
       }
+    }
 
-      // Find poster/thumbnail
-      final videoTag = item.querySelector('video');
-      final thumbnailUrl = videoTag?.attributes['poster'] ?? '';
+    // Strategy 3: find <img> tags as thumbnails
+    if (shorts.isEmpty) {
+      final imgs = document.querySelectorAll('img[src]');
+      for (var i = 0; i < imgs.length; i++) {
+        final img = imgs[i];
+        final src = img.attributes['src'] ?? '';
+        if (src.isEmpty || seen.contains(src)) continue;
+        // Skip small images (icons, avatars)
+        final width = int.tryParse(img.attributes['width'] ?? '0') ?? 0;
+        final height = int.tryParse(img.attributes['height'] ?? '0') ?? 0;
+        if ((width > 0 && width < 100) || (height > 0 && height < 100)) continue;
+        if (!src.contains('.jpg') && !src.contains('.png') && !src.contains('.webp') && !src.contains('thumb') && !src.contains('poster')) continue;
 
-      // Find title
-      final title = _extractText(item, '.short-title, .video-title, h5, h4, .title, a[title]');
+        seen.add(src);
+        final parent = img.parent;
+        String title = parent?.attributes['title'] ?? '';
+        if (title.isEmpty) {
+          final h = parent?.querySelector('h5, h4, .title');
+          if (h != null) title = h.text.trim();
+        }
 
-      // Find views
-      final viewsText = _extractText(item, '.views, .view-count, .short-view, .fa-eye + span, span');
-      final views = _parseViews(viewsText);
-
-      // Find username/channel
-      final username = _extractText(item, '.channel-name, .username, .user-name, a[href*="/"]');
-
-      if (videoUrl.isNotEmpty) {
         shorts.add(Short(
           id: i + 1,
           title: title,
-          videoUrl: _makeAbsoluteUrl(videoUrl),
-          thumbnailUrl: _makeAbsoluteUrl(thumbnailUrl),
-          username: username,
-          views: views,
+          videoUrl: '',
+          thumbnailUrl: _abs(src),
+          username: '',
+          views: 0,
         ));
       }
     }
 
     return shorts;
-  }
-
-  static String _extractText(dom.Element? parent, String selectors) {
-    if (parent == null) return '';
-    final parts = selectors.split(',');
-    for (final selector in parts) {
-      final el = parent.querySelector(selector.trim());
-      if (el != null) {
-        final text = el.text.trim();
-        if (text.isNotEmpty) return text;
-      }
-    }
-    return '';
-  }
-
-  static int _parseViews(String text) {
-    if (text.isEmpty) return 0;
-    final cleaned = text.replaceAll(RegExp(r'[^\dKkMm]'), '').trim();
-    if (cleaned.isEmpty) return 0;
-    try {
-      if (cleaned.toUpperCase().endsWith('K')) {
-        return (double.parse(cleaned.substring(0, cleaned.length - 1)) * 1000).toInt();
-      }
-      if (cleaned.toUpperCase().endsWith('M')) {
-        return (double.parse(cleaned.substring(0, cleaned.length - 1)) * 1000000).toInt();
-      }
-      return int.parse(RegExp(r'\d+').firstMatch(text)?.group(0) ?? '0');
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  static String _makeAbsoluteUrl(String url) {
-    if (url.isEmpty) return url;
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    if (url.startsWith('//')) return 'https:$url';
-    return 'https://layn.su$url';
   }
 
   Map<String, dynamic> toJson() => {
