@@ -12,21 +12,29 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _videos = <Video>[];
+  final _categories = <Category>[];
   bool _loading = true;
   String? _error;
   int _page = 1;
   bool _more = true;
+  String? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadCategories();
+    _loadVideos();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadCategories() async {
+    final cats = await ApiService.instance.categories();
+    if (mounted) setState(() => _categories.addAll(cats));
+  }
+
+  Future<void> _loadVideos() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final d = await ApiService.instance.home(page: _page);
+      final d = await ApiService.instance.home(page: _page, category: _selectedCategory);
       final list = (d['data']?['videos'] as List? ?? [])
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
           .where((v) => !v.isShorts)
@@ -42,10 +50,107 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _onCategorySelected(String? slug) {
+    if (_selectedCategory == slug) return;
+    setState(() => _selectedCategory = slug);
+    _page = 1;
+    _loadVideos();
+  }
+
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      // ===== ШАПКА =====
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        centerTitle: false,
+        title: Row(children: [
+          // Логотип
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE53935),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.play_arrow, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 8),
+          const Text('Layn',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5)),
+        ]),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined, color: Colors.white, size: 26),
+            onPressed: () {},
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+
+      body: Column(children: [
+        // ===== КАТЕГОРИИ =====
+        _buildCategories(),
+
+        // ===== ВИДЕО =====
+        Expanded(child: _buildBody()),
+      ]),
+    );
+  }
+
+  Widget _buildCategories() {
+    return Container(
+      height: 48,
+      color: Colors.black,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        children: [
+          // "Все"
+          _catChip('Все', null),
+          // Категории из API
+          ..._categories.map((c) => _catChip(c.name, c.slug)),
+        ],
+      ),
+    );
+  }
+
+  Widget _catChip(String label, String? slug) {
+    final active = _selectedCategory == slug;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () => _onCategorySelected(slug),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: active ? Colors.white : const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? Colors.white : const Color(0xFF333),
+              width: 1,
+            ),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                color: active ? Colors.black : Colors.grey[400],
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+              )),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF6C5CE7)));
+      return const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)));
     }
     if (_error != null) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -53,16 +158,17 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 12),
         Text(_error!, style: const TextStyle(color: Colors.white70)),
         const SizedBox(height: 16),
-        FilledButton(onPressed: _load, child: const Text('Повторить')),
+        FilledButton(onPressed: _loadVideos, child: const Text('Повторить')),
       ]));
     }
     if (_videos.isEmpty) {
       return const Center(child: Text('Нет видео', style: TextStyle(color: Colors.white54)));
     }
     return RefreshIndicator(
-      onRefresh: _load,
+      color: const Color(0xFFE53935),
+      onRefresh: _loadVideos,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.only(top: 4, bottom: 16),
         itemCount: _videos.length,
         itemBuilder: (_, i) => VideoCard(
           video: _videos[i],

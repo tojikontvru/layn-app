@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
 
 String abs(String url) {
@@ -6,6 +6,24 @@ String abs(String url) {
   if (url.startsWith('http')) return url;
   if (url.startsWith('//')) return 'https:$url';
   return 'https://layn.su$url';
+}
+
+String timeAgo(String? dateStr) {
+  if (dateStr == null || dateStr.isEmpty) return '';
+  try {
+    final date = DateTime.parse(dateStr);
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    if (diff.inSeconds < 60) return 'только что';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} мин. назад';
+    if (diff.inHours < 24) return '${diff.inHours} ч. назад';
+    if (diff.inDays < 7) return '${diff.inDays} дн. назад';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()} нед. назад';
+    if (diff.inDays < 365) return '${(diff.inDays / 30).floor()} мес. назад';
+    return DateFormat('dd.MM.yyyy').format(date);
+  } catch (_) {
+    return dateStr;
+  }
 }
 
 class Video {
@@ -22,6 +40,7 @@ class Video {
   final String? channelName;
   final String? avatar;
   final int? commentsCount;
+  final String? categorySlug;
 
   Video({
     required this.id,
@@ -37,6 +56,7 @@ class Video {
     this.channelName,
     this.avatar,
     this.commentsCount,
+    this.categorySlug,
   });
 
   String get thumb => abs(thumbnailUrl);
@@ -60,6 +80,7 @@ class Video {
         channelName: j['channel_name'] ?? j['firstname'],
         avatar: j['avatar'],
         commentsCount: j['comments_count'],
+        categorySlug: j['category_slug'] ?? j['slug'],
       );
 }
 
@@ -88,6 +109,20 @@ class Comment {
       );
 }
 
+class Category {
+  final int id;
+  final String name;
+  final String slug;
+
+  Category({required this.id, required this.name, required this.slug});
+
+  factory Category.fromJson(Map<String, dynamic> j) => Category(
+        id: j['id'] ?? 0,
+        name: j['name'] ?? '',
+        slug: j['slug'] ?? '',
+      );
+}
+
 class Short {
   final int id;
   final String title;
@@ -107,7 +142,6 @@ class Short {
     final data = resp['data'];
     if (data == null) return [];
 
-    // Case 1: data.videos is a JSON array
     final videos = data['videos'];
     if (videos is List) {
       return videos.asMap().entries.map((e) {
@@ -122,7 +156,6 @@ class Short {
       }).toList();
     }
 
-    // Case 2: data.videos is HTML string — parse it
     if (videos is String && videos.isNotEmpty) {
       return _parseHtml(videos);
     }
@@ -135,7 +168,6 @@ class Short {
     final shorts = <Short>[];
     int idx = 0;
 
-    // Strategy: find all <video> tags with src/source
     for (final v in doc.querySelectorAll('video')) {
       final src = v.querySelector('source')?.attributes['src'] ??
           v.attributes['src'] ??
@@ -146,7 +178,6 @@ class Short {
       String poster = v.attributes['poster'] ?? '';
       int views = 0;
 
-      // Walk parents to find title/views
       var el = v.parent;
       for (var i = 0; i < 5 && el != null; i++, el = el.parent) {
         if (title.isEmpty) {
