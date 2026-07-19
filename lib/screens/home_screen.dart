@@ -13,6 +13,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _videos = <Video>[];
   final _categories = <Category>[];
+  final _shortsUrls = <String>{};
   bool _loading = true;
   String? _error;
   int _page = 1;
@@ -22,8 +23,27 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCategories();
-    _loadVideos();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    // Параллельно загружаем категории и URL шортсов
+    await Future.wait([
+      _loadCategories(),
+      _loadShortsUrls(),
+    ]);
+    // Затем загружаем видео
+    await _loadVideos();
+  }
+
+  Future<void> _loadShortsUrls() async {
+    try {
+      final urls = await ApiService.instance.shortsUrls();
+      if (mounted) setState(() => _shortsUrls.addAll(urls));
+      debugPrint('SHORTS URLs loaded: ${_shortsUrls.length} urls');
+    } catch (e) {
+      debugPrint('Failed to load shorts URLs: $e');
+    }
   }
 
   Future<void> _loadCategories() async {
@@ -47,20 +67,13 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final d = await ApiService.instance.home(page: _page, category: _selectedCategory);
-      debugPrint('HOME API keys: ${d.keys}');
-      debugPrint('HOME data keys: ${(d['data'] is Map) ? (d['data'] as Map).keys : 'not map'}');
       final videosRaw = (d['data']?['videos'] as List? ?? []);
-      debugPrint('HOME videos count: ${videosRaw.length}');
-      if (videosRaw.isNotEmpty) {
-        debugPrint('HOME first video keys: ${(videosRaw[0] as Map).keys.toList()}');
-        debugPrint('HOME first video avatar: ${(videosRaw[0] as Map)['avatar']}');
-        debugPrint('HOME first video user: ${(videosRaw[0] as Map)['user']}');
-        debugPrint('HOME first video is_shorts: ${(videosRaw[0] as Map)['is_shorts_video']}');
-      }
+      debugPrint('HOME videos: ${videosRaw.length}, shorts urls: ${_shortsUrls.length}');
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) => !v.isShorts)
+          .where((v) => !v.isShorts && !_shortsUrls.contains(v.videoUrl))
           .toList();
+      debugPrint('HOME after filter: ${list.length} videos');
       setState(() {
         _videos.clear();
         _videos.addAll(list);

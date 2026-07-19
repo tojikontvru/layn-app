@@ -127,4 +127,29 @@ class ApiService {
     }
     throw HttpException('HTTP ${r.statusCode}');
   }
+
+  /// Загружает шортсы и возвращает Set URL видео (для исключения с главной)
+  Future<Set<String>> shortsUrls() async {
+    final urls = <String>{};
+    try {
+      for (int page = 1; page <= 3; page++) {
+        final r = await http.get(
+          Uri.parse('$shortsUrl?page=$page'),
+          headers: {'Accept': 'application/json'},
+        );
+        if (r.statusCode != 200) break;
+        final d = jsonDecode(r.body) as Map<String, dynamic>;
+        final shorts = Short.fromResponse(d);
+        if (shorts.isEmpty) break;
+        for (final s in shorts) {
+          if (s.videoUrl.isNotEmpty) urls.add(s.videoUrl);
+        }
+        final meta = d['data'] ?? {};
+        final lastPage = meta['last_page'] ?? 1;
+        if (page >= lastPage) break;
+      }
+    } catch (_) {}
+    debugPrint('SHORTS URLs loaded: ${urls.length}');
+    return urls;
+  }
 }
