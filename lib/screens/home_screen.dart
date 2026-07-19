@@ -28,14 +28,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadCategories() async {
     final cats = await ApiService.instance.categories();
-    if (mounted) setState(() => _categories.addAll(cats));
+    if (mounted) {
+      // Fallback categories if API returns empty
+      if (cats.isEmpty) {
+        setState(() => _categories.addAll([
+          Category(id: 1, name: 'Музыка', slug: 'mus8c'),
+          Category(id: 2, name: 'Фильмы', slug: 'movie'),
+          Category(id: 3, name: 'Сериалы', slug: 'series'),
+          Category(id: 4, name: 'Развлечение', slug: 'entertainment'),
+        ]));
+      } else {
+        setState(() => _categories.addAll(cats));
+      }
+    }
   }
 
   Future<void> _loadVideos() async {
     setState(() { _loading = true; _error = null; });
     try {
       final d = await ApiService.instance.home(page: _page, category: _selectedCategory);
-      final list = (d['data']?['videos'] as List? ?? [])
+      debugPrint('HOME API keys: ${d.keys}');
+      debugPrint('HOME data keys: ${(d['data'] is Map) ? (d['data'] as Map).keys : 'not map'}');
+      final videosRaw = (d['data']?['videos'] as List? ?? []);
+      debugPrint('HOME videos count: ${videosRaw.length}');
+      if (videosRaw.isNotEmpty) {
+        debugPrint('HOME first video keys: ${(videosRaw[0] as Map).keys.toList()}');
+        debugPrint('HOME first video avatar: ${(videosRaw[0] as Map)['avatar']}');
+        debugPrint('HOME first video user: ${(videosRaw[0] as Map)['user']}');
+        debugPrint('HOME first video is_shorts: ${(videosRaw[0] as Map)['is_shorts_video']}');
+      }
+      final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
           .where((v) => !v.isShorts)
           .toList();

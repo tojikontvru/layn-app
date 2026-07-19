@@ -134,7 +134,7 @@ class _VideoScreenState extends State<VideoScreen> {
                 radius: 18,
                 backgroundColor: const Color(0xFF333),
                 backgroundImage: (v.user?.avatar ?? '').isNotEmpty
-                    ? NetworkImage(v.user!.avatar!)
+                    ? NetworkImage(abs(v.user!.avatar!))
                     : null,
                 child: (v.user?.avatar == null || v.user!.avatar!.isEmpty)
                     ? Text((v.user?.username ?? '?')[0].toUpperCase(),
@@ -168,7 +168,7 @@ class _VideoScreenState extends State<VideoScreen> {
                       radius: 14,
                       backgroundColor: const Color(0xFF333),
                       backgroundImage: (cm.user?.avatar ?? '').isNotEmpty
-                          ? CachedNetworkImageProvider(cm.user!.avatar!)
+                          ? CachedNetworkImageProvider(abs(cm.user!.avatar!))
                           : null,
                       child: (cm.user?.avatar ?? '').isEmpty
                           ? Text((cm.user?.username ?? '?')[0].toUpperCase(),

@@ -49,8 +49,19 @@ class ApiService {
   Future<List<Category>> categories() async {
     try {
       final d = await get('/categories');
-      final list = d['data'] as List? ?? [];
-      return list.map((e) => Category.fromJson(e as Map<String, dynamic>)).toList();
+      // Try different response structures
+      dynamic raw = d['data'] ?? d['categories'] ?? d;
+      if (raw is Map) {
+        // Could be {data: {categories: [...]}} or flat map
+        raw = raw['categories'] ?? raw['data'] ?? raw.values.firstWhere((v) => v is List, orElse: () => []);
+      }
+      if (raw is List) {
+        return raw.map((e) {
+          if (e is Map<String, dynamic>) return Category.fromJson(e);
+          return Category(id: 0, name: e.toString(), slug: '');
+        }).toList();
+      }
+      return [];
     } catch (_) {
       return [];
     }

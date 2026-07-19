@@ -63,7 +63,7 @@ class VideoCard extends StatelessWidget {
                 radius: 18,
                 backgroundColor: const Color(0xFF222),
                 backgroundImage: (video.user?.avatar ?? '').isNotEmpty
-                    ? NetworkImage(video.user!.avatar!)
+                    ? NetworkImage(abs(video.user!.avatar!))
                     : null,
                 child: (video.user?.avatar == null || video.user!.avatar!.isEmpty)
                     ? Text(

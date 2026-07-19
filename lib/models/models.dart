@@ -72,15 +72,15 @@ class Video {
         description: j['description'] ?? '',
         thumbnailUrl: j['thumbnail_url'] ?? j['thumb'] ?? '',
         videoUrl: j['video_url'] ?? '',
-        username: j['username'] ?? '',
+        username: j['username'] ?? j['user']?['username'] ?? '',
         views: j['views'] ?? 0,
         duration: j['duration'] ?? '',
         createdAt: j['created_at'] ?? '',
         isShorts: j['is_shorts_video'] ?? false,
-        channelName: j['channel_name'] ?? j['firstname'],
-        avatar: j['avatar'],
+        channelName: j['channel_name'] ?? j['firstname'] ?? j['user']?['channel_name'] ?? j['user']?['firstname'],
+        avatar: abs(j['avatar'] ?? j['user']?['avatar'] ?? ''),
         commentsCount: j['comments_count'],
-        categorySlug: j['category_slug'] ?? j['slug'],
+        categorySlug: j['category_slug'] ?? j['slug'] ?? j['category']?['slug'],
       );
 }
 
@@ -104,7 +104,7 @@ class Comment {
             ? VideoUser(
                 username: j['user']['username'],
                 channelName: j['user']['channel_name'],
-                avatar: j['user']['avatar'])
+                avatar: abs(j['user']['avatar'] ?? ''))
             : null,
       );
 }
