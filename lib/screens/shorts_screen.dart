@@ -1,13 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
+import '../constants.dart';
 import '../models/models.dart';
-import '../services/api_service.dart';
 
 class ShortsScreen extends StatefulWidget {
   const ShortsScreen({super.key});
-
   @override
   State<ShortsScreen> createState() => _ShortsScreenState();
 }
@@ -16,26 +15,30 @@ class _ShortsScreenState extends State<ShortsScreen> {
   List<Short> _shorts = [];
   bool _loading = true;
   String? _error;
-  int _currentPage = 1;
+  int _page = 1;
   int _lastPage = 1;
-  bool _loadingMore = false;
 
   @override
   void initState() {
     super.initState();
-    _loadShorts();
+    _load();
   }
 
-  Future<void> _loadShorts() async {
+  Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final response = await ApiService.instance.shorts(page: _currentPage);
-      final shorts = Short.parseFromHtml(response);
-      final data = response['data'] ?? {};
+      final r = await http.get(
+        Uri.parse('$shortsUrl?page=$_page'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+      final d = jsonDecode(r.body) as Map<String, dynamic>;
+      final shorts = Short.fromResponse(d);
+      final meta = d['data'] ?? {};
       setState(() {
         _shorts = shorts;
-        _currentPage = data['current_page'] ?? 1;
-        _lastPage = data['last_page'] ?? 1;
+        _page = meta['current_page'] ?? 1;
+        _lastPage = meta['last_page'] ?? 1;
         _loading = false;
       });
     } catch (e) {
@@ -43,240 +46,164 @@ class _ShortsScreenState extends State<ShortsScreen> {
     }
   }
 
-  Future<void> _loadMore() async {
-    if (_loadingMore || _currentPage >= _lastPage) return;
-    setState(() { _loadingMore = true; });
-    try {
-      final nextPage = _currentPage + 1;
-      final response = await ApiService.instance.shorts(page: nextPage);
-      final moreShorts = Short.parseFromHtml(response);
-      final data = response['data'] ?? {};
-      setState(() {
-        _shorts.addAll(moreShorts);
-        _currentPage = data['current_page'] ?? nextPage;
-        _lastPage = data['last_page'] ?? _lastPage;
-        _loadingMore = false;
-      });
-    } catch (e) {
-      setState(() { _loadingMore = false; });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Color(0xFFE53935))));
-    }
-    if (_error != null) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.error_outline, color: Color(0xFFE53935), size: 48),
-            const SizedBox(height: 12),
-            Text('Ошибка: $_error', style: const TextStyle(color: Colors.white70), textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadShorts, child: const Text('Повторить')),
-          ]),
-        ),
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
-    if (_shorts.isEmpty) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: Text('Нет shorts', style: TextStyle(color: Colors.white54))));
+    if (_error != null || _shorts.isEmpty) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.video_library_outlined, color: Colors.white24, size: 64),
+          const SizedBox(height: 16),
+          Text(_error ?? 'Нет shorts', style: const TextStyle(color: Colors.white54)),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: _load, child: const Text('Повторить')),
+        ])),
+      );
     }
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: PageView.builder(
         scrollDirection: Axis.vertical,
         itemCount: _shorts.length,
-        itemBuilder: (context, index) {
-          // Auto-load more when near end
-          if (index >= _shorts.length - 3) {
-            _loadMore();
-          }
-          return ShortsPlayer(short: _shorts[index]);
+        itemBuilder: (_, i) {
+          if (i >= _shorts.length - 3 && _page < _lastPage) _loadMore();
+          return _Player(short: _shorts[i]);
         },
       ),
     );
   }
+
+  void _loadMore() async {
+    final nextPage = _page + 1;
+    try {
+      final r = await http.get(
+        Uri.parse('$shortsUrl?page=$nextPage'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (r.statusCode != 200) return;
+      final d = jsonDecode(r.body) as Map<String, dynamic>;
+      final more = Short.fromResponse(d);
+      final meta = d['data'] ?? {};
+      if (mounted) {
+        setState(() {
+          _shorts.addAll(more);
+          _page = meta['current_page'] ?? nextPage;
+          _lastPage = meta['last_page'] ?? _lastPage;
+        });
+      }
+    } catch (_) {}
+  }
 }
 
-class ShortsPlayer extends StatefulWidget {
+class _Player extends StatefulWidget {
   final Short short;
-  const ShortsPlayer({super.key, required this.short});
-
+  const _Player({required this.short});
   @override
-  State<ShortsPlayer> createState() => _ShortsPlayerState();
+  State<_Player> createState() => _PlayerState();
 }
 
-class _ShortsPlayerState extends State<ShortsPlayer> {
-  late VideoPlayerController _videoController;
-  ChewieController? _chewieController;
-  bool _isPlaying = false;
-  bool _showControls = false;
+class _PlayerState extends State<_Player> {
+  late VideoPlayerController _ctrl;
+  bool _ready = false;
+  bool _paused = false;
 
   @override
   void initState() {
     super.initState();
-    _initPlayer();
-  }
-
-  Future<void> _initPlayer() async {
-    try {
-      _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.short.videoUrl));
-      await _videoController.initialize();
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController,
-        autoPlay: true,
-        looping: true,
-        showControls: false,
-        allowFullScreen: false,
-      );
-      if (mounted) {
-        setState(() { _isPlaying = true; });
-      }
-    } catch (e) {
-      debugPrint('Shorts player init error: $e');
-    }
+    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.short.videoUrl))
+      ..initialize().then((_) {
+        if (mounted) { setState(() => _ready = true); _ctrl.play(); }
+      }).catchError((_) {});
   }
 
   @override
   void dispose() {
-    _videoController.dispose();
-    _chewieController?.dispose();
+    _ctrl.dispose();
     super.dispose();
   }
 
-  void _togglePlayPause() {
+  void _toggle() {
     setState(() {
-      if (_videoController.value.isPlaying) {
-        _videoController.pause();
-        _isPlaying = false;
-      } else {
-        _videoController.play();
-        _isPlaying = true;
-      }
+      _paused ? _ctrl.play() : _ctrl.pause();
+      _paused = !_paused;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        _togglePlayPause();
-        setState(() { _showControls = true; });
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) setState(() { _showControls = false; });
-        });
-      },
+      onTap: _toggle,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Video
-          _chewieController != null
+          _ready
               ? FittedBox(
                   fit: BoxFit.cover,
                   clipBehavior: Clip.hardEdge,
                   child: SizedBox(
-                    width: _videoController.value.size.width,
-                    height: _videoController.value.size.height,
-                    child: Chewie(controller: _chewieController!),
+                    width: _ctrl.value.size.width,
+                    height: _ctrl.value.size.height,
+                    child: VideoPlayer(_ctrl),
                   ),
                 )
-              : Container(
-                  color: Colors.black,
-                  child: const Center(child: CircularProgressIndicator(color: Color(0xFFE53935))),
-                ),
-
-          // Play/pause overlay
-          if (_showControls)
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.4),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _isPlaying ? Icons.pause : Icons.play_arrow,
-                  color: Colors.white,
-                  size: 48,
-                ),
-              ),
-            ),
-
-          // Info overlay at bottom
+              : const Center(child: CircularProgressIndicator(color: Colors.white)),
+          if (_paused)
+            const Center(child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72)),
+          // Info
           Positioned(
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.of(context).padding.bottom + 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (widget.short.title.isNotEmpty)
-                  Text(
-                    widget.short.title,
+            left: 16, right: 60,
+            bottom: MediaQuery.of(context).padding.bottom + 24,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (widget.short.title.isNotEmpty)
+                Text(widget.short.title,
                     style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                if (widget.short.username.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    '@${widget.short.username}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-                if (widget.short.views > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${widget.short.views} просмотров',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                ],
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+              if (widget.short.views > 0) ...[
+                const SizedBox(height: 6),
+                Text('${widget.short.views} просмотров',
+                    style: const TextStyle(color: Colors.white60, fontSize: 13)),
               ],
-            ),
+            ]),
           ),
-
-          // Right side actions
+          // Right buttons
           Positioned(
             right: 12,
-            bottom: MediaQuery.of(context).padding.bottom + 80,
-            child: Column(
-              children: [
-                _actionButton(Icons.favorite_border, '${widget.short.views}', () {}),
-                const SizedBox(height: 20),
-                _actionButton(Icons.chat_bubble_outline, '', () {}),
-                const SizedBox(height: 20),
-                _actionButton(Icons.share, '', () {}),
-              ],
-            ),
+            bottom: MediaQuery.of(context).padding.bottom + 100,
+            child: Column(children: [
+              _btn(Icons.favorite_border, '${widget.short.views}'),
+              const SizedBox(height: 24),
+              _btn(Icons.chat_bubble_outline, ''),
+              const SizedBox(height: 24),
+              _btn(Icons.share, ''),
+            ]),
           ),
+          // Progress
+          if (_ready)
+            Positioned(
+              left: 0, right: 0, bottom: 0,
+              child: VideoProgressIndicator(_ctrl, allowScrubbing: true,
+                  colors: const VideoProgressColors(playedColor: Color(0xFF6C5CE7), bufferedColor: Colors.white24)),
+            ),
         ],
       ),
     );
   }
 
-  Widget _actionButton(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 28),
-          ),
-          if (label.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
-          ],
+  Widget _btn(IconData icon, String label) => Column(children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: const BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
+          child: Icon(icon, color: Colors.white, size: 28),
+        ),
+        if (label.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
         ],
-      ),
-    );
-  }
+      ]);
 }

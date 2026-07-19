@@ -19,12 +19,11 @@ class VideoScreen extends StatefulWidget {
 class _VideoScreenState extends State<VideoScreen> {
   VideoPlayerController? _vp;
   ChewieController? _chewie;
-  bool _playerReady = false;
+  bool _ready = false;
   List<Comment> _comments = [];
   List<Video> _related = [];
   bool _loadingComments = false;
   final _commentCtrl = TextEditingController();
-  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -40,29 +39,32 @@ class _VideoScreenState extends State<VideoScreen> {
     _vp = VideoPlayerController.networkUrl(Uri.parse(url));
     _vp!.initialize().then((_) {
       if (!mounted) return;
-      _chewie = ChewieController(videoPlayerController: _vp!, autoPlay: true, allowFullScreen: true, allowMuting: true, showControls: true);
-      setState(() => _playerReady = true);
+      _chewie = ChewieController(videoPlayerController: _vp!, autoPlay: true, allowFullScreen: true);
+      setState(() => _ready = true);
     }).catchError((_) {
-      Future.delayed(const Duration(seconds: 3), () { if (mounted) _initPlayer(); });
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) _initPlayer();
+      });
     });
   }
 
   Future<void> _loadComments() async {
     setState(() => _loadingComments = true);
     try {
-      _comments = await ApiService.instance.comments(widget.video.id);
+      final list = await ApiService.instance.comments(widget.video.id);
+      _comments = list.map((e) => Comment.fromJson(e as Map<String, dynamic>)).toList();
     } catch (_) {}
     if (mounted) setState(() => _loadingComments = false);
   }
 
   Future<void> _loadRelated() async {
     try {
-      final data = await ApiService.instance.home(page: 1);
-      final list = (data['data']?['videos'] as List? ?? [])
+      final d = await ApiService.instance.home();
+      final list = (d['data']?['videos'] as List? ?? [])
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) => !v.isShortsVideo)
+          .where((v) => !v.isShorts && v.id != widget.video.id)
           .toList();
-      if (mounted) setState(() => _related = list.where((v) => v.id != widget.video.id).take(10).toList());
+      if (mounted) setState(() => _related = list.take(10).toList());
     } catch (_) {}
   }
 
@@ -75,11 +77,13 @@ class _VideoScreenState extends State<VideoScreen> {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
     try {
-      await ApiService.instance.comment(widget.video.id, text);
+      await ApiService.instance.sendComment(widget.video.id, text);
       _commentCtrl.clear();
-      await _loadComments();
+      _loadComments();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     }
   }
 
@@ -88,7 +92,6 @@ class _VideoScreenState extends State<VideoScreen> {
     _vp?.dispose();
     _chewie?.dispose();
     _commentCtrl.dispose();
-    _scroll.dispose();
     super.dispose();
   }
 
@@ -99,93 +102,132 @@ class _VideoScreenState extends State<VideoScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
-      body: Column(
-        children: [
-          Container(color: Colors.black, width: double.infinity,
-            child: AspectRatio(aspectRatio: _playerReady ? _vp!.value.aspectRatio : 16 / 9,
-              child: _playerReady && _chewie != null
+      body: Column(children: [
+        // Player
+        Container(
+          color: Colors.black,
+          width: double.infinity,
+          child: AspectRatio(
+            aspectRatio: _ready && _vp != null ? _vp!.value.aspectRatio : 16 / 9,
+            child: _ready && _chewie != null
                 ? Chewie(controller: _chewie!)
                 : Stack(alignment: Alignment.center, children: [
-                    if (v.thumb.isNotEmpty) CachedNetworkImage(imageUrl: v.thumb, fit: BoxFit.cover),
-                    const CircularProgressIndicator(color: Color(0xFFE53935)),
+                    if (v.thumb.isNotEmpty)
+                      CachedNetworkImage(imageUrl: v.thumb, fit: BoxFit.cover, width: double.infinity),
+                    const CircularProgressIndicator(color: Color(0xFF6C5CE7)),
                   ]),
-            ),
           ),
-          Expanded(
-            child: ListView(
-              controller: _scroll,
-              padding: const EdgeInsets.all(12),
-              children: [
-                Text(v.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text('${v.views} просмотров', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
-                const SizedBox(height: 12),
-                Row(children: [
-                  CircleAvatar(radius: 18, backgroundColor: const Color(0xFF333333),
-                    backgroundImage: (v.user?.avatar ?? '').isNotEmpty ? NetworkImage(v.user!.avatar!) : null,
-                    child: (v.user?.avatar == null || v.user!.avatar!.isEmpty)
-                      ? Text((v.user?.username ?? '?')[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 14)) : null),
-                  const SizedBox(width: 10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(v.user?.channelName ?? v.user?.username ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ])),
-                  ElevatedButton(
-                    onPressed: () async {
-                      if (!auth.isAuth) { Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())); return; }
-                    },
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
-                    child: const Text('Подписаться', style: TextStyle(color: Colors.white))),
-                ]),
-                const Divider(color: Color(0xFF2A2A2A), height: 24),
-                Text('Комментарии (${_comments.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 12),
-                if (_loadingComments)
-                  const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)))
-                else if (_comments.isEmpty)
-                  const Center(child: Padding(padding: EdgeInsets.all(16), child: Text('Пока нет комментариев', style: TextStyle(color: Colors.grey))))
-                else
-                  ..._comments.map((cm) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      CircleAvatar(radius: 14, backgroundColor: const Color(0xFF333333),
-                        backgroundImage: (cm.user?.avatar ?? '').isNotEmpty ? CachedNetworkImageProvider(cm.user!.avatar!) : null,
-                        child: (cm.user?.avatar ?? '').isEmpty
-                          ? Text((cm.user?.username ?? '?')[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11)) : null),
-                      const SizedBox(width: 10),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(cm.user?.channelName ?? cm.user?.username ?? '', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-                        Text(cm.comment, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                      ])),
-                    ]),
+        ),
+
+        // Details
+        Expanded(
+          child: ListView(padding: const EdgeInsets.all(12), children: [
+            Text(v.title,
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('${v.views} просмотров', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+            const SizedBox(height: 16),
+
+            // Channel
+            Row(children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xFF333),
+                backgroundImage: (v.user?.avatar ?? '').isNotEmpty
+                    ? NetworkImage(v.user!.avatar!)
+                    : null,
+                child: (v.user?.avatar == null || v.user!.avatar!.isEmpty)
+                    ? Text((v.user?.username ?? '?')[0].toUpperCase(),
+                        style: const TextStyle(color: Colors.white))
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(v.channel,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ]),
+            const Divider(color: Color(0xFF222), height: 24),
+
+            // Comments
+            Text('Комментарии (${_comments.length})',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            if (_loadingComments)
+              const Center(child: CircularProgressIndicator(color: Color(0xFF6C5CE7)))
+            else if (_comments.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: Text('Пока нет комментариев', style: TextStyle(color: Colors.grey))),
+              )
+            else
+              ..._comments.map((cm) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: const Color(0xFF333),
+                      backgroundImage: (cm.user?.avatar ?? '').isNotEmpty
+                          ? CachedNetworkImageProvider(cm.user!.avatar!)
+                          : null,
+                      child: (cm.user?.avatar ?? '').isEmpty
+                          ? Text((cm.user?.username ?? '?')[0].toUpperCase(),
+                              style: const TextStyle(color: Colors.white, fontSize: 11))
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(cm.user?.channelName ?? cm.user?.username ?? '',
+                            style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                        Text(cm.text, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                      ]),
+                    ),
+                  ]))),
+
+            // Related
+            if (_related.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Похожие видео',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              ..._related.map((r) => VideoCard(
+                    video: r,
+                    onTap: () => Navigator.pushReplacement(
+                        context, MaterialPageRoute(builder: (_) => VideoScreen(video: r))),
                   )),
-                const SizedBox(height: 16),
-                if (_related.isNotEmpty) ...[
-                  const Text('Похожие видео', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 8),
-                  ..._related.map((r) => VideoCard(video: r, onTap: () {
-                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VideoScreen(video: r)));
-                    })),
-                ],
-              ],
-            ),
+            ],
+          ]),
+        ),
+
+        // Comment input
+        if (auth.isAuth)
+          Container(
+            padding: EdgeInsets.only(
+                left: 12, right: 12, bottom: MediaQuery.of(context).padding.bottom + 8, top: 8),
+            decoration: const BoxDecoration(color: Color(0xFF1A1A1A)),
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Комментарий...',
+                    hintStyle: TextStyle(color: Colors.grey[600]),
+                    filled: true,
+                    fillColor: const Color(0xFF2A2A2A),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                  icon: const Icon(Icons.send, color: Color(0xFF6C5CE7)),
+                  onPressed: _sendComment),
+            ]),
           ),
-          if (auth.isAuth)
-            Container(
-              padding: EdgeInsets.only(left: 12, right: 12, bottom: MediaQuery.of(context).padding.bottom + 8, top: 8),
-              decoration: const BoxDecoration(color: Color(0xFF1A1A1A)),
-              child: Row(children: [
-                Expanded(child: TextField(
-                  controller: _commentCtrl, style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(hintText: 'Комментарий...', hintStyle: TextStyle(color: Colors.grey[600]),
-                    filled: true, fillColor: const Color(0xFF2A2A2A),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none)),
-                )),
-                const SizedBox(width: 8),
-                IconButton(icon: const Icon(Icons.send, color: Color(0xFFE53935)), onPressed: _sendComment),
-              ]),
-            ),
-        ],
-      ),
+      ]),
     );
   }
 }

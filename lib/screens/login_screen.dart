@@ -9,80 +9,73 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _userCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  bool _obscure = true;
+  final _u = TextEditingController();
+  final _p = TextEditingController();
+  bool _loading = false;
   String? _error;
 
   Future<void> _login() async {
-    setState(() => _error = null);
+    setState(() { _loading = true; _error = null; });
     try {
-      await context.read<AuthProvider>().login(_userCtrl.text.trim(), _passCtrl.text);
+      await context.read<AuthProvider>().login(_u.text.trim(), _p.text);
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() { _error = 'Неверный логин или пароль'; _loading = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(backgroundColor: const Color(0xFF1A1A1A), title: const Text('Вход', style: TextStyle(color: Colors.white))),
-      body: Padding(
+      appBar: AppBar(title: const Text('Вход'), backgroundColor: const Color(0xFF0E0E0E)),
+      backgroundColor: const Color(0xFF0E0E0E),
+      body: ListView(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.play_circle_fill, color: Color(0xFFE53935), size: 64),
-            const SizedBox(height: 16),
-            const Text('Layn', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 32),
-            TextField(
-              controller: _userCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Имя пользователя',
-                hintStyle: TextStyle(color: Colors.grey[500]),
-                filled: true,
-                fillColor: const Color(0xFF1A1A1A),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            ),
+        children: [
+          const SizedBox(height: 40),
+          const Icon(Icons.person, color: Colors.white24, size: 80),
+          const SizedBox(height: 40),
+          TextField(
+            controller: _u,
+            style: const TextStyle(color: Colors.white),
+            decoration: _deco('Логин'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _p,
+            obscureText: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: _deco('Пароль'),
+          ),
+          if (_error != null) ...[
             const SizedBox(height: 12),
-            TextField(
-              controller: _passCtrl,
-              obscureText: _obscure,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Пароль',
-                hintStyle: TextStyle(color: Colors.grey[500]),
-                filled: true,
-                fillColor: const Color(0xFF1A1A1A),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _login,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53935), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: const Text('Войти', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
           ],
-        ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _loading ? null : _login,
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
+            child: _loading
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Войти'),
+          ),
+        ],
       ),
     );
+  }
+
+  InputDecoration _deco(String label) => InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.grey),
+        filled: true,
+        fillColor: const Color(0xFF1A1A1A),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      );
+
+  @override
+  void dispose() {
+    _u.dispose();
+    _p.dispose();
+    super.dispose();
   }
 }

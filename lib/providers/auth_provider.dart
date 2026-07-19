@@ -8,7 +8,7 @@ class AuthProvider extends ChangeNotifier {
   VideoUser? _user;
   bool _loading = false;
 
-  AuthProvider({required this.api});
+  AuthProvider(this.api);
 
   VideoUser? get user => _user;
   bool get isAuth => _user != null;
@@ -20,8 +20,16 @@ class AuthProvider extends ChangeNotifier {
       final token = prefs.getString('token');
       if (token != null && token.isNotEmpty) {
         api.setToken(token);
-        _user = await api.me();
-        notifyListeners();
+        final d = await api.me();
+        final u = d['data'];
+        if (u != null) {
+          _user = VideoUser(
+            username: u['username'],
+            channelName: u['channel_name'] ?? u['firstname'],
+            avatar: u['avatar'],
+          );
+          notifyListeners();
+        }
       }
     } catch (_) {
       api.setToken(null);
@@ -32,29 +40,17 @@ class AuthProvider extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final data = await api.login(username, password);
-      final token = data['data']?['token'] ?? data['token'];
-      if (token != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', token.toString());
-        _user = await api.me();
-      }
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> register(String username, String email, String password, String firstname) async {
-    _loading = true;
-    notifyListeners();
-    try {
-      final data = await api.register(username, email, password, firstname);
-      final token = data['data']?['token'] ?? data['token'];
-      if (token != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', token.toString());
-        _user = await api.me();
+      await api.login(username, password);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', api.token ?? '');
+      final d = await api.me();
+      final u = d['data'];
+      if (u != null) {
+        _user = VideoUser(
+          username: u['username'],
+          channelName: u['channel_name'] ?? u['firstname'],
+          avatar: u['avatar'],
+        );
       }
     } finally {
       _loading = false;
