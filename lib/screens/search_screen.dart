@@ -19,13 +19,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _search(String q) async {
     if (q.trim().isEmpty) return;
+    _focus.unfocus();
     setState(() { _loading = true; _searched = true; });
     try {
-      final d = await ApiService.instance.search(q);
-      final list = (d['data'] as List? ?? [])
-          .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) => !v.isShorts)
-          .toList();
+      final list = await ApiService.instance.search(q);
       setState(() { _results = list; _loading = false; });
     } catch (_) {
       setState(() { _results = []; _loading = false; });
@@ -64,7 +61,7 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       Expanded(
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF6C5CE7)))
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)))
             : !_searched
                 ? Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
