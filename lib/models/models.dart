@@ -98,10 +98,11 @@ class Video {
 }
 
 class VideoUser {
+  final int? id;
   final String? username;
   final String? channelName;
   final String? avatar;
-  VideoUser({this.username, this.channelName, this.avatar});
+  VideoUser({this.id, this.username, this.channelName, this.avatar});
 }
 
 class Comment {
@@ -115,6 +116,7 @@ class Comment {
         text: j['comment'] ?? '',
         user: j['user'] != null
             ? VideoUser(
+                id: j['user']['id'],
                 username: j['user']['username'],
                 channelName: j['user']['channel_name'],
                 avatar: abs(j['user']['avatar'] ?? ''))

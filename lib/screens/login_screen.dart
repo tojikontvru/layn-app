@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,8 +28,12 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Вход'), backgroundColor: const Color(0xFF0E0E0E)),
-      backgroundColor: const Color(0xFF0E0E0E),
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text('Вход', style: TextStyle(color: Colors.white)),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -38,39 +43,53 @@ class _LoginScreenState extends State<LoginScreen> {
           TextField(
             controller: _u,
             style: const TextStyle(color: Colors.white),
-            decoration: _deco('Логин'),
+            decoration: _deco('Логин', Icons.person_outline),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _p,
             obscureText: true,
             style: const TextStyle(color: Colors.white),
-            decoration: _deco('Пароль'),
+            decoration: _deco('Пароль', Icons.lock_outline),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+            Text(_error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
           ],
           const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _loading ? null : _login,
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
-            child: _loading
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Войти'),
+          SizedBox(
+            height: 50,
+            child: FilledButton(
+              onPressed: _loading ? null : _login,
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
+              child: _loading
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Войти', style: TextStyle(fontSize: 16)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: () {
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const RegisterScreen()));
+            },
+            child: const Text('Нет аккаунта? Зарегистрироваться',
+                style: TextStyle(color: Color(0xFF6C5CE7))),
           ),
         ],
       ),
     );
   }
 
-  InputDecoration _deco(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Colors.grey),
-        filled: true,
-        fillColor: const Color(0xFF1A1A1A),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      );
+  InputDecoration _deco(String label, IconData icon) => InputDecoration(
+    labelText: label,
+    labelStyle: const TextStyle(color: Colors.grey),
+    prefixIcon: Icon(icon, color: Colors.grey),
+    filled: true,
+    fillColor: const Color(0xFF1A1A1A),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF6C5CE7))),
+  );
 
   @override
   void dispose() {

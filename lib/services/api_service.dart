@@ -117,9 +117,12 @@ class ApiService {
 
   Future<Map<String, dynamic>> me() => get('/me');
 
-  // === Social ===
-  Future<void> subscribe(String username) => post('/subscribe', body: {'username': username});
-  Future<void> reaction(int videoId, String type) => post('/reaction', body: {'video_id': videoId, 'type': type});
+  // === Social (auth required) ===
+  Future<Map<String, dynamic>> subscribe(int channelId) =>
+      post('/subscribe', body: {'channel_id': channelId});
+
+  Future<Map<String, dynamic>> reaction(int videoId, String type) =>
+      post('/reaction', body: {'video_id': videoId, 'reaction': type});
 
   // === Shorts ===
   Future<List<dynamic>> shorts({int page = 1}) async {

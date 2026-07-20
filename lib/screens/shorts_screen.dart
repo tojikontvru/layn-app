@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:share_plus/share_plus.dart';
 import '../constants.dart';
 import '../models/models.dart';
+import '../providers/auth_provider.dart';
+import '../services/api_service.dart';
+import 'package:provider/provider.dart';
 
 class ShortsScreen extends StatefulWidget {
   const ShortsScreen({super.key});
@@ -32,17 +36,9 @@ class _ShortsScreenState extends State<ShortsScreen> {
         Uri.parse('$shortsUrl?page=$_page'),
         headers: {'Accept': 'application/json'},
       );
-      debugPrint('SHORTS API: ${r.statusCode}');
-
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
-
       final shorts = Short.fromResponse(d);
-      debugPrint('SHORTS parsed: ${shorts.length} shorts');
-      for (final s in shorts) {
-        debugPrint('  #${s.id}: url="${s.videoUrl}" title="${s.title}"');
-      }
-
       final meta = d['data'] ?? {};
       setState(() {
         _shorts = shorts;
@@ -51,7 +47,6 @@ class _ShortsScreenState extends State<ShortsScreen> {
         _loading = false;
       });
     } catch (e) {
-      debugPrint('SHORTS load error: $e');
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
@@ -59,14 +54,11 @@ class _ShortsScreenState extends State<ShortsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
-      );
+      return const Scaffold(backgroundColor: Colors.black,
+          body: Center(child: CircularProgressIndicator(color: Colors.white)));
     }
     if (_error != null || _shorts.isEmpty) {
-      return Scaffold(
-        backgroundColor: Colors.black,
+      return Scaffold(backgroundColor: Colors.black,
         body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.video_library_outlined, color: Colors.white24, size: 64),
           const SizedBox(height: 16),
@@ -83,7 +75,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
         itemCount: _shorts.length,
         itemBuilder: (_, i) {
           if (i >= _shorts.length - 3 && _page < _lastPage) _loadMore();
-          return _Player(short: _shorts[i]);
+          return _ShortPlayer(short: _shorts[i]);
         },
       ),
     );
@@ -92,79 +84,60 @@ class _ShortsScreenState extends State<ShortsScreen> {
   void _loadMore() async {
     final nextPage = _page + 1;
     try {
-      final r = await http.get(
-        Uri.parse('$shortsUrl?page=$nextPage'),
-        headers: {'Accept': 'application/json'},
-      );
+      final r = await http.get(Uri.parse('$shortsUrl?page=$nextPage'),
+          headers: {'Accept': 'application/json'});
       if (r.statusCode != 200) return;
       final d = jsonDecode(r.body) as Map<String, dynamic>;
       final more = Short.fromResponse(d);
       final meta = d['data'] ?? {};
-      if (mounted) {
-        setState(() {
-          _shorts.addAll(more);
-          _page = meta['current_page'] ?? nextPage;
-          _lastPage = meta['last_page'] ?? _lastPage;
-        });
-      }
+      if (mounted) setState(() {
+        _shorts.addAll(more);
+        _page = meta['current_page'] ?? nextPage;
+        _lastPage = meta['last_page'] ?? _lastPage;
+      });
     } catch (_) {}
   }
 }
 
-class _Player extends StatefulWidget {
+class _ShortPlayer extends StatefulWidget {
   final Short short;
-  const _Player({required this.short});
+  const _ShortPlayer({required this.short});
   @override
-  State<_Player> createState() => _PlayerState();
+  State<_ShortPlayer> createState() => _ShortPlayerState();
 }
 
-class _PlayerState extends State<_Player> {
+class _ShortPlayerState extends State<_ShortPlayer> {
   VideoPlayerController? _videoCtrl;
   ChewieController? _chewieCtrl;
   bool _ready = false;
   bool _paused = false;
   String? _error;
+  bool _liked = false;
+  int _likeCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _likeCount = widget.short.views;
     _initPlayer();
   }
 
   Future<void> _initPlayer() async {
-    // API возвращает полные URL: https://layn.su/storage/videos/xxx.mp4
     final url = widget.short.videoUrl;
-    debugPrint('SHORTS player init: $url');
-
     try {
-      _videoCtrl = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        httpHeaders: const {
-          'Accept': '*/*',
-          'Referer': 'https://layn.su/',
-          'Origin': 'https://layn.su',
-        },
-      );
-
+      _videoCtrl = VideoPlayerController.networkUrl(Uri.parse(url),
+          httpHeaders: const {'Referer': 'https://layn.su/', 'Origin': 'https://layn.su'});
       await _videoCtrl!.initialize();
-
       if (!mounted) return;
-
       _chewieCtrl = ChewieController(
         videoPlayerController: _videoCtrl!,
-        autoPlay: true,
-        looping: true,
-        showControls: false,
-        showControlsOnInitialize: false,
-        allowFullScreen: false,
-        allowMuting: false,
+        autoPlay: true, looping: true,
+        showControls: false, showControlsOnInitialize: false,
+        allowFullScreen: false, allowMuting: false,
         aspectRatio: _videoCtrl!.value.aspectRatio,
       );
-
       setState(() => _ready = true);
     } catch (e) {
-      debugPrint('SHORTS player error: $e');
-      debugPrint('SHORTS URL: $url');
       if (mounted) setState(() => _error = e.toString());
     }
   }
@@ -184,6 +157,47 @@ class _PlayerState extends State<_Player> {
     });
   }
 
+  void _onLike() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.loggedIn) { _showLoginPrompt(); return; }
+    setState(() {
+      _liked = !_liked;
+      _likeCount += _liked ? 1 : -1;
+    });
+    try {
+      await ApiService.instance.reaction(widget.short.id, 'like');
+    } catch (_) {}
+  }
+
+  void _onShare() {
+    SharePlus.instance.share(
+      ShareParams(
+        text: '${widget.short.title}\nhttps://layn.su/video/${widget.short.id}',
+        subject: 'Layn Shorts',
+      ),
+    );
+  }
+
+  void _showLoginPrompt() {
+    showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.person_outline, color: Colors.white, size: 48),
+          const SizedBox(height: 16),
+          const Text('Войдите чтобы ставить лайки', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 20),
+          SizedBox(width: double.infinity, child: FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
+            onPressed: () { Navigator.pop(context); /* navigate to login */ },
+            child: const Text('Войти'),
+          )),
+          const SizedBox(height: 16),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -191,62 +205,100 @@ class _PlayerState extends State<_Player> {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // Video
           if (_error != null)
             _buildError()
           else if (_ready && _chewieCtrl != null)
-            FittedBox(
-              fit: BoxFit.cover,
-              clipBehavior: Clip.hardEdge,
-              child: SizedBox(
-                width: _videoCtrl!.value.size.width,
-                height: _videoCtrl!.value.size.height,
-                child: Chewie(controller: _chewieCtrl!),
-              ),
-            )
+            Center(child: AspectRatio(
+              aspectRatio: _videoCtrl!.value.aspectRatio,
+              child: Chewie(controller: _chewieCtrl!),
+            ))
           else
             _buildLoading(),
 
+          // Pause icon
           if (_paused)
-            const Center(
-              child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72),
-            ),
+            const Center(child: Icon(Icons.play_arrow, color: Colors.white70, size: 80)),
 
-          // Info overlay
+          // Bottom gradient + info
           Positioned(
-            left: 16,
-            right: 60,
-            bottom: MediaQuery.of(context).padding.bottom + 24,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (widget.short.username.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text('@${widget.short.username}',
+            left: 0, right: 0, bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 40, 80, 24),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                  colors: [Colors.black87, Colors.transparent]),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // Channel name
+                Row(children: [
+                  CircleAvatar(
+                    radius: 16, backgroundColor: const Color(0xFF333),
+                    backgroundImage: widget.short.avatar.isNotEmpty
+                        ? NetworkImage(widget.short.avatar) : null,
+                    child: widget.short.avatar.isEmpty
+                        ? Text((widget.short.username.isNotEmpty ? widget.short.username[0] : '?').toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontSize: 14))
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Text('@${widget.short.username}',
                       style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                ),
-              if (widget.short.title.isNotEmpty)
-                Text(widget.short.title,
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
-                    maxLines: 3, overflow: TextOverflow.ellipsis),
-              if (widget.short.views > 0) ...[
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.white54),
+                        borderRadius: BorderRadius.circular(4)),
+                    child: const Text('Подписаться', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                // Title
+                if (widget.short.title.isNotEmpty)
+                  Text(widget.short.title,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 6),
-                Text('${widget.short.views} просмотров',
-                    style: const TextStyle(color: Colors.white60, fontSize: 13)),
-              ],
-            ]),
+                // Music note
+                Row(children: [
+                  const Icon(Icons.music_note, color: Colors.white, size: 14),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text('@${widget.short.username}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      overflow: TextOverflow.ellipsis)),
+                ]),
+              ]),
+            ),
           ),
 
-          // Right buttons
+          // Right side buttons (YouTube Shorts style)
           Positioned(
-            right: 12,
-            bottom: MediaQuery.of(context).padding.bottom + 100,
+            right: 8,
+            bottom: MediaQuery.of(context).padding.bottom + 80,
             child: Column(children: [
-              _avatar(),
+              // Like
+              _sideButton(
+                icon: _liked ? Icons.favorite : Icons.favorite_border,
+                color: _liked ? Colors.red : Colors.white,
+                label: _likeCount > 0 ? _formatCount(_likeCount) : '',
+                onTap: _onLike,
+              ),
               const SizedBox(height: 20),
-              _btn(Icons.favorite_border, ''),
+              // Comments
+              _sideButton(icon: Icons.chat_bubble_outline, label: '', onTap: () {}),
               const SizedBox(height: 20),
-              _btn(Icons.chat_bubble_outline, ''),
+              // Share
+              _sideButton(icon: Icons.reply, label: '', onTap: _onShare),
               const SizedBox(height: 20),
-              _btn(Icons.share, ''),
+              // Sound
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white30),
+                ),
+                child: const Icon(Icons.music_note, color: Colors.white, size: 18),
+              ),
             ]),
           ),
 
@@ -254,99 +306,62 @@ class _PlayerState extends State<_Player> {
           if (_ready)
             Positioned(
               left: 0, right: 0, bottom: 0,
-              child: VideoProgressIndicator(
-                _videoCtrl!,
-                allowScrubbing: true,
-                colors: const VideoProgressColors(
-                  playedColor: Color(0xFF6C5CE7),
-                  bufferedColor: Colors.white24,
-                ),
-              ),
+              child: VideoProgressIndicator(_videoCtrl!, allowScrubbing: false,
+                  colors: const VideoProgressColors(playedColor: Colors.red, bufferedColor: Colors.white24)),
             ),
         ],
       ),
     );
   }
 
-  Widget _avatar() {
-    final hasAvatar = widget.short.avatar.isNotEmpty;
-    return Column(children: [
-      CircleAvatar(
-        radius: 22,
-        backgroundColor: const Color(0xFF333),
-        backgroundImage: hasAvatar ? NetworkImage(widget.short.avatar) : null,
-        child: !hasAvatar
-            ? Text((widget.short.username.isNotEmpty ? widget.short.username[0] : '?').toUpperCase(),
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))
-            : null,
-      ),
-      const SizedBox(height: 4),
-      const Icon(Icons.add_circle_outline, color: Colors.white, size: 18),
-    ]);
+  Widget _sideButton({required IconData icon, Color? color, String? label, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        Icon(icon, color: color ?? Colors.white, size: 28),
+        if (label != null && label.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+        ],
+      ]),
+    );
+  }
+
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
   }
 
   Widget _buildError() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (widget.short.thumbnailUrl.isNotEmpty)
-          Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox()),
-        Container(
-          color: Colors.black54,
-          child: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 48),
-              const SizedBox(height: 12),
-              const Text('Ошибка загрузки видео',
-                  style: TextStyle(color: Colors.white70, fontSize: 14)),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(widget.short.videoUrl,
-                    style: const TextStyle(color: Colors.white38, fontSize: 10),
-                    maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.tonal(
-                onPressed: () {
-                  setState(() { _error = null; _ready = false; });
-                  _videoCtrl?.dispose();
-                  _chewieCtrl?.dispose();
-                  _initPlayer();
-                },
-                child: const Text('Повторить'),
-              ),
-            ]),
-          ),
-        ),
-      ],
-    );
+    return Stack(fit: StackFit.expand, children: [
+      if (widget.short.thumbnailUrl.isNotEmpty)
+        Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox()),
+      Container(color: Colors.black54,
+        child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 48),
+          const SizedBox(height: 12),
+          const Text('Ошибка загрузки', style: TextStyle(color: Colors.white70)),
+          const SizedBox(height: 8),
+          FilledButton.tonal(onPressed: () {
+            setState(() { _error = null; _ready = false; });
+            _videoCtrl?.dispose(); _chewieCtrl?.dispose();
+            _initPlayer();
+          }, child: const Text('Повторить')),
+        ])),
+      ),
+    ]);
   }
 
   Widget _buildLoading() {
     if (widget.short.thumbnailUrl.isNotEmpty) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox()),
-          const Center(child: CircularProgressIndicator(color: Colors.white)),
-        ],
-      );
+      return Stack(fit: StackFit.expand, children: [
+        Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox()),
+        const Center(child: CircularProgressIndicator(color: Colors.white)),
+      ]);
     }
     return const Center(child: CircularProgressIndicator(color: Colors.white));
   }
-
-  Widget _btn(IconData icon, String label) => Column(children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: const BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
-          child: Icon(icon, color: Colors.white, size: 28),
-        ),
-        if (label.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
-        ],
-      ]);
 }
