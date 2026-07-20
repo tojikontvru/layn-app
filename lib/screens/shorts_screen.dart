@@ -30,25 +30,49 @@ class _ShortsScreenState extends State<ShortsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final r = await http.get(
-        Uri.parse('$shortsUrl?page=$_page')
+        Uri.parse('$shortsUrl?page=$_page'),
         headers: {'Accept': 'application/json'},
       );
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
       final shorts = Short.fromResponse(d);
       final meta = d['data'] ?? {};
-      setState(() {
-        _shorts = shorts;
-        _page = meta['current_page'] ?? 1;
-        _lastPage = meta['last_page'] ?? 1;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _shorts = shorts;
+          _page = meta['current_page'] ?? 1;
+          _lastPage = meta['last_page'] ?? 1;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
+  }
+
+  void _loadMore() async {
+    final nextPage = _page + 1;
+    try {
+      final r = await http.get(Uri.parse('$shortsUrl?page=$nextPage'),
+          headers: {'Accept': 'application/json'});
+      if (r.statusCode != 200) return;
+      final d = jsonDecode(r.body) as Map<String, dynamic>;
+      final more = Short.fromResponse(d);
+      final meta = d['data'] ?? {};
+      if (mounted) {
+        setState(() {
+          _shorts.addAll(more);
+          _page = meta['current_page'] ?? nextPage;
+          _lastPage = meta['last_page'] ?? _lastPage;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -60,12 +84,12 @@ class _ShortsScreenState extends State<ShortsScreen> {
     if (_error != null || _shorts.isEmpty) {
       return Scaffold(backgroundColor: Colors.black,
         body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.video_library_outlined, color: Colors.white24, size: 64)
-          const SizedBox(height: 16)
-          Text(_error ?? 'Нет shorts', style: const TextStyle(color: Colors.white54))
-          const SizedBox(height: 16)
-          FilledButton(onPressed: _load, child: const Text('Повторить'))
-        ]))
+          const Icon(Icons.video_library_outlined, color: Colors.white24, size: 64),
+          const SizedBox(height: 16),
+          Text(_error ?? 'Нет shorts', style: const TextStyle(color: Colors.white54)),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: _load, child: const Text('Повторить')),
+        ])),
       );
     }
     return Scaffold(
@@ -75,38 +99,21 @@ class _ShortsScreenState extends State<ShortsScreen> {
         itemCount: _shorts.length,
         itemBuilder: (_, i) {
           if (i >= _shorts.length - 3 && _page < _lastPage) _loadMore();
-          return _ShortPlayer(short: _shorts[i]);
+          return ShortPlayer(short: _shorts[i]);
         },
-      )
+      ),
     );
   }
-
-  void _loadMore() async {
-    final nextPage = _page + 1;
-    try {
-      final r = await http.get(Uri.parse('$shortsUrl?page=$nextPage')
-          headers: {'Accept': 'application/json'});
-      if (r.statusCode != 200) return;
-      final d = jsonDecode(r.body) as Map<String, dynamic>;
-      final more = Short.fromResponse(d);
-      final meta = d['data'] ?? {};
-      if (mounted) setState(() {
-        _shorts.addAll(more);
-        _page = meta['current_page'] ?? nextPage;
-        _lastPage = meta['last_page'] ?? _lastPage;
-      });
-    } catch (_) {}
-  }
 }
 
-class _ShortPlayer extends StatefulWidget {
+class ShortPlayer extends StatefulWidget {
   final Short short;
-  const _ShortPlayer({required this.short});
+  const ShortPlayer({super.key, required this.short});
   @override
-  State<_ShortPlayer> createState() => _ShortPlayerState();
+  State<ShortPlayer> createState() => _ShortPlayerState();
 }
 
-class _ShortPlayerState extends State<_ShortPlayer> {
+class _ShortPlayerState extends State<ShortPlayer> {
   VideoPlayerController? _videoCtrl;
   ChewieController? _chewieCtrl;
   bool _ready = false;
@@ -125,7 +132,7 @@ class _ShortPlayerState extends State<_ShortPlayer> {
   Future<void> _initPlayer() async {
     final url = widget.short.videoUrl;
     try {
-      _videoCtrl = VideoPlayerController.networkUrl(Uri.parse(url)
+      _videoCtrl = VideoPlayerController.networkUrl(Uri.parse(url),
           httpHeaders: const {'Referer': 'https://layn.su/', 'Origin': 'https://layn.su'});
       await _videoCtrl!.initialize();
       if (!mounted) return;
@@ -164,33 +171,31 @@ class _ShortPlayerState extends State<_ShortPlayer> {
       _liked = !_liked;
       _likeCount += _liked ? 1 : -1;
     });
-    try {
-      await ApiService.instance.reaction(widget.short.id, 'like');
-    } catch (_) {}
+    try { await ApiService.instance.reaction(widget.short.id, 'like'); } catch (_) {}
   }
 
   void _onShare() {
     Share.share('${widget.short.title}\nhttps://layn.su/video/${widget.short.id}');
   }
-  }
 
   void _showLoginPrompt() {
-    showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1E1E1E)
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16)))
-      builder: (_) => Padding(padding: const EdgeInsets.all(24)
+    showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.person_outline, color: Colors.white, size: 48)
-          const SizedBox(height: 16)
-          const Text('Войдите чтобы ставить лайки', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600))
-          const SizedBox(height: 20)
+          const Icon(Icons.person_outline, color: Colors.white, size: 48),
+          const SizedBox(height: 16),
+          const Text('Войдите чтобы ставить лайки',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 20),
           SizedBox(width: double.infinity, child: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7))
-            onPressed: () { Navigator.pop(context); /* navigate to login */ },
-            child: const Text('Войти')
-          ))
-          const SizedBox(height: 16)
-        ])
-      )
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
+            onPressed: () { Navigator.pop(context); },
+            child: const Text('Войти'),
+          )),
+          const SizedBox(height: 16),
+        ]),
+      ),
     );
   }
 
@@ -207,106 +212,105 @@ class _ShortPlayerState extends State<_ShortPlayer> {
           else if (_ready && _chewieCtrl != null)
             Center(child: AspectRatio(
               aspectRatio: _videoCtrl!.value.aspectRatio,
-              child: Chewie(controller: _chewieCtrl!)
+              child: Chewie(controller: _chewieCtrl!),
             ))
           else
-            _buildLoading()
+            _buildLoading(),
 
           // Pause icon
           if (_paused)
-            const Center(child: Icon(Icons.play_arrow, color: Colors.white70, size: 80))
+            const Center(child: Icon(Icons.play_arrow, color: Colors.white70, size: 80)),
 
           // Bottom gradient + info
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 40, 80, 24)
+              padding: const EdgeInsets.fromLTRB(16, 40, 80, 24),
               decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                  colors: [Colors.black87, Colors.transparent])
-              )
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                  colors: [Colors.black87, Colors.transparent],
+                ),
+              ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Channel name
                 Row(children: [
                   CircleAvatar(
-                    radius: 16, backgroundColor: const Color(0xFF333)
+                    radius: 16, backgroundColor: const Color(0xFF333),
                     backgroundImage: widget.short.avatar.isNotEmpty
                         ? NetworkImage(widget.short.avatar) : null,
                     child: widget.short.avatar.isEmpty
-                        ? Text((widget.short.username.isNotEmpty ? widget.short.username[0] : '?').toUpperCase()
+                        ? Text((widget.short.username.isNotEmpty ? widget.short.username[0] : '?').toUpperCase(),
                             style: const TextStyle(color: Colors.white, fontSize: 14))
                         : null,
-                  )
-                  const SizedBox(width: 8)
+                  ),
+                  const SizedBox(width: 8),
                   Text('@${widget.short.username}',
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600))
-                  const SizedBox(width: 12)
+                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4)
-                    decoration: BoxDecoration(border: Border.all(color: Colors.white54)
-                        borderRadius: BorderRadius.circular(4))
-                    child: const Text('Подписаться', style: TextStyle(color: Colors.white, fontSize: 12))
-                  )
-                ])
-                const SizedBox(height: 10)
-                // Title
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white54),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('Подписаться', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ),
+                ]),
+                const SizedBox(height: 10),
                 if (widget.short.title.isNotEmpty)
                   Text(widget.short.title,
-                      style: const TextStyle(color: Colors.white, fontSize: 14)
-                      maxLines: 2, overflow: TextOverflow.ellipsis)
-                const SizedBox(height: 6)
-                // Music note
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 6),
                 Row(children: [
-                  const Icon(Icons.music_note, color: Colors.white, size: 14)
-                  const SizedBox(width: 4)
+                  const Icon(Icons.music_note, color: Colors.white, size: 14),
+                  const SizedBox(width: 4),
                   Expanded(child: Text('@${widget.short.username}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12)
-                      overflow: TextOverflow.ellipsis))
-                ])
-              ])
-            )
-          )
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      overflow: TextOverflow.ellipsis)),
+                ]),
+              ]),
+            ),
+          ),
 
-          // Right side buttons (YouTube Shorts style)
+          // Right side buttons
           Positioned(
             right: 8,
             bottom: MediaQuery.of(context).padding.bottom + 80,
             child: Column(children: [
-              // Like
               _sideButton(
                 icon: _liked ? Icons.favorite : Icons.favorite_border,
                 color: _liked ? Colors.red : Colors.white,
-                label: _likeCount > 0 ? _formatCount(_likeCount) : '',
+                label: _formatCount(_likeCount),
                 onTap: _onLike,
-              )
-              const SizedBox(height: 20)
-              // Comments
-              _sideButton(icon: Icons.chat_bubble_outline, label: '', onTap: () {})
-              const SizedBox(height: 20)
-              // Share
-              _sideButton(icon: Icons.reply, label: '', onTap: _onShare)
-              const SizedBox(height: 20)
-              // Sound
+              ),
+              const SizedBox(height: 20),
+              _sideButton(icon: Icons.chat_bubble_outline, label: '', onTap: () {}),
+              const SizedBox(height: 20),
+              _sideButton(icon: Icons.reply, label: '', onTap: _onShare),
+              const SizedBox(height: 20),
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4)
-                  border: Border.all(color: Colors.white30)
-                )
-                child: const Icon(Icons.music_note, color: Colors.white, size: 18)
-              )
-            ])
-          )
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white30),
+                ),
+                child: const Icon(Icons.music_note, color: Colors.white, size: 18),
+              ),
+            ]),
+          ),
 
           // Progress
           if (_ready)
             Positioned(
               left: 0, right: 0, bottom: 0,
-              child: VideoProgressIndicator(_videoCtrl!, allowScrubbing: false,
-                  colors: const VideoProgressColors(playedColor: Colors.red, bufferedColor: Colors.white24))
-            )
+              child: VideoProgressIndicator(
+                _videoCtrl!, allowScrubbing: false,
+                colors: const VideoProgressColors(playedColor: Colors.red, bufferedColor: Colors.white24),
+              ),
+            ),
         ],
-      )
+      ),
     );
   }
 
@@ -314,12 +318,12 @@ class _ShortPlayerState extends State<_ShortPlayer> {
     return GestureDetector(
       onTap: onTap,
       child: Column(children: [
-        Icon(icon, color: color ?? Colors.white, size: 28)
+        Icon(icon, color: color ?? Colors.white, size: 28),
         if (label != null && label.isNotEmpty) ...[
-          const SizedBox(height: 4)
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11))
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
         ],
-      ])
+      ]),
     );
   }
 
@@ -333,20 +337,21 @@ class _ShortPlayerState extends State<_ShortPlayer> {
     return Stack(fit: StackFit.expand, children: [
       if (widget.short.thumbnailUrl.isNotEmpty)
         Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const SizedBox())
+            errorBuilder: (_, __, ___) => const SizedBox()),
       Container(color: Colors.black54,
         child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 48)
-          const SizedBox(height: 12)
-          const Text('Ошибка загрузки', style: TextStyle(color: Colors.white70))
-          const SizedBox(height: 8)
+          const Icon(Icons.error_outline, color: Colors.red, size: 48),
+          const SizedBox(height: 12),
+          const Text('Ошибка загрузки', style: TextStyle(color: Colors.white70)),
+          const SizedBox(height: 8),
           FilledButton.tonal(onPressed: () {
             setState(() { _error = null; _ready = false; });
-            _videoCtrl?.dispose(); _chewieCtrl?.dispose();
+            _videoCtrl?.dispose();
+            _chewieCtrl?.dispose();
             _initPlayer();
-          }, child: const Text('Повторить'))
-        ]))
-      )
+          }, child: const Text('Повторить')),
+        ])),
+      ),
     ]);
   }
 
@@ -354,8 +359,8 @@ class _ShortPlayerState extends State<_ShortPlayer> {
     if (widget.short.thumbnailUrl.isNotEmpty) {
       return Stack(fit: StackFit.expand, children: [
         Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const SizedBox())
-        const Center(child: CircularProgressIndicator(color: Colors.white))
+            errorBuilder: (_, __, ___) => const SizedBox()),
+        const Center(child: CircularProgressIndicator(color: Colors.white)),
       ]);
     }
     return const Center(child: CircularProgressIndicator(color: Colors.white));
