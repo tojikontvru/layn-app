@@ -71,7 +71,8 @@ class ApiService {
   // === Search ===
   Future<List<Video>> search(String q) async {
     final d = await get('/search?q=$q');
-    return (d['data'] as List? ?? [])
+    final videos = d['data']?['videos'] as List? ?? d['data'] as List? ?? [];
+    return videos
         .map((e) => Video.fromJson(e as Map<String, dynamic>))
         .where((v) => !v.isShorts)
         .toList();
@@ -83,7 +84,8 @@ class ApiService {
   // === Comments ===
   Future<List<Comment>> comments(int videoId) async {
     final d = await get('/video/$videoId/comments');
-    return (d['data'] as List? ?? [])
+    final list = d['data']?['comments'] as List? ?? d['data'] as List? ?? [];
+    return list
         .map((e) => Comment.fromJson(e as Map<String, dynamic>))
         .toList();
   }

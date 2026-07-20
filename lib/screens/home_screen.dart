@@ -13,43 +13,41 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _videos = <Video>[];
   final _categories = <Category>[];
-  final _shortsIds = <int>{};
+  final _scrollCtrl = ScrollController();
   bool _loading = true;
+  bool _loadingMore = false;
   String? _error;
   int _page = 1;
-  bool _more = true;
+  int _lastPage = 1;
   String? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
     _loadAll();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 400) {
+      _loadMore();
+    }
   }
 
   Future<void> _loadAll() async {
-    // Параллельно загружаем категории и ID шортсов
-    await Future.wait([
-      _loadCategories(),
-      _loadShortsIds(),
-    ]);
-    // Затем загружаем видео
+    await _loadCategories();
     await _loadVideos();
-  }
-
-  Future<void> _loadShortsIds() async {
-    try {
-      final ids = await ApiService.instance.shortsIds();
-      if (mounted) setState(() => _shortsIds.addAll(ids));
-      debugPrint('SHORTS IDs loaded: ${_shortsIds.length}');
-    } catch (e) {
-      debugPrint('Failed to load shorts IDs: $e');
-    }
   }
 
   Future<void> _loadCategories() async {
     final cats = await ApiService.instance.categories();
     if (mounted) {
-      // Fallback categories if API returns empty
       if (cats.isEmpty) {
         setState(() => _categories.addAll([
           Category(id: 1, name: 'Музыка', slug: 'mus8c'),
@@ -64,27 +62,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadVideos() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() { _loading = true; _error = null; _page = 1; });
     try {
-      final d = await ApiService.instance.home(page: _page, category: _selectedCategory);
+      final d = await ApiService.instance.home(page: 1, category: _selectedCategory);
       final videosRaw = (d['data']?['videos'] as List? ?? []);
-      debugPrint('HOME videos: ${videosRaw.length}, shorts IDs: ${_shortsIds.length}');
-
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) {
-        // Исключаем если is_shorts=1 (из API)
-        if (v.isShorts) return false;
-        // Исключаем по ID (из /api/v1/shorts)
-        if (_shortsIds.contains(v.id)) return false;
-        return true;
-      }).toList();
-
-      debugPrint('HOME after filter: ${list.length} videos (removed ${videosRaw.length - list.length} shorts)');
+          .toList();
+      
+      final meta = d['data'] ?? {};
       setState(() {
         _videos.clear();
         _videos.addAll(list);
-        _more = list.length >= 10;
+        _lastPage = meta['last_page'] ?? 1;
         _loading = false;
       });
     } catch (e) {
@@ -92,10 +82,32 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadMore() async {
+    if (_loadingMore || _page >= _lastPage) return;
+    setState(() => _loadingMore = true);
+    try {
+      final nextPage = _page + 1;
+      final d = await ApiService.instance.home(page: nextPage, category: _selectedCategory);
+      final videosRaw = (d['data']?['videos'] as List? ?? []);
+      final list = videosRaw
+          .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .toList();
+      
+      if (mounted) {
+        setState(() {
+          _videos.addAll(list);
+          _page = nextPage;
+          _loadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
   void _onCategorySelected(String? slug) {
     if (_selectedCategory == slug) return;
     setState(() => _selectedCategory = slug);
-    _page = 1;
     _loadVideos();
   }
 
@@ -203,13 +215,22 @@ class _HomeScreenState extends State<HomeScreen> {
       color: const Color(0xFFE53935),
       onRefresh: _loadVideos,
       child: ListView.builder(
+        controller: _scrollCtrl,
         padding: const EdgeInsets.only(top: 4, bottom: 16),
-        itemCount: _videos.length,
-        itemBuilder: (_, i) => VideoCard(
-          video: _videos[i],
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i]))),
-        ),
+        itemCount: _videos.length + (_loadingMore ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i == _videos.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(color: Color(0xFFE53935))),
+            );
+          }
+          return VideoCard(
+            video: _videos[i],
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i]))),
+          );
+        },
       ),
     );
   }
