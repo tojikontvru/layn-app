@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import '../constants.dart';
@@ -18,6 +20,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
   String? _error;
   int _page = 1;
   int _lastPage = 1;
+  Map<String, String> _cookies = {};
 
   @override
   void initState() {
@@ -25,31 +28,35 @@ class _ShortsScreenState extends State<ShortsScreen> {
     _load();
   }
 
+  /// Извлекает cookies из HTTP-ответа
+  void _extractCookies(http.Response response) {
+    final raw = response.headers['set-cookie'];
+    if (raw == null) return;
+    // set-cookie может содержать несколько значений разделённых запятыми
+    // но запятая также бывает в value cookie — аккуратно парсим
+    final parts = raw.split(RegExp(r',(?=\s*\w+=)'));
+    for (final part in parts) {
+      final kv = part.split(';')[0].trim().split('=');
+      if (kv.length >= 2) {
+        _cookies[kv[0].trim()] = kv.sublist(1).join('=').trim();
+      }
+    }
+  }
+
+  String get _cookieHeader =>
+      _cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
       final r = await http.get(Uri.parse('$shortsUrl?page=$_page'));
-      debugPrint('SHORTS API response: ${r.statusCode}, ${r.body.length} bytes');
+      _extractCookies(r);
+      debugPrint('SHORTS cookies: ${_cookies.keys.toList()}');
+
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
-
-      debugPrint('SHORTS data keys: ${(d['data'] as Map?)?.keys?.toList()}');
-      final videos = d['data']?['videos'];
-      if (videos is String) {
-        debugPrint('SHORTS videos is HTML: ${videos.length} chars');
-      } else if (videos is List) {
-        debugPrint('SHORTS videos is JSON: ${videos.length} items');
-        if (videos.isNotEmpty) {
-          debugPrint('SHORTS first item keys: ${(videos[0] as Map).keys.toList()}');
-          debugPrint('SHORTS first item: ${videos[0]}');
-        }
-      }
-
       final shorts = Short.fromResponse(d);
       debugPrint('SHORTS parsed: ${shorts.length} shorts');
-      for (final s in shorts) {
-        debugPrint('  #${s.id}: url="${s.videoUrl}" title="${s.title}"');
-      }
 
       final meta = d['data'] ?? {};
       setState(() {
@@ -91,7 +98,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
         itemCount: _shorts.length,
         itemBuilder: (_, i) {
           if (i >= _shorts.length - 3 && _page < _lastPage) _loadMore();
-          return _Player(short: _shorts[i]);
+          return _Player(short: _shorts[i], cookieHeader: _cookieHeader);
         },
       ),
     );
@@ -101,6 +108,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
     final nextPage = _page + 1;
     try {
       final r = await http.get(Uri.parse('$shortsUrl?page=$nextPage'));
+      _extractCookies(r);
       if (r.statusCode != 200) return;
       final d = jsonDecode(r.body) as Map<String, dynamic>;
       final more = Short.fromResponse(d);
@@ -118,7 +126,8 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
 class _Player extends StatefulWidget {
   final Short short;
-  const _Player({required this.short});
+  final String cookieHeader;
+  const _Player({required this.short, required this.cookieHeader});
   @override
   State<_Player> createState() => _PlayerState();
 }
@@ -129,7 +138,8 @@ class _PlayerState extends State<_Player> {
   bool _ready = false;
   bool _paused = false;
   String? _error;
-  String? _resolvedUrl;
+  double _downloadProgress = 0;
+  File? _tempFile;
 
   @override
   void initState() {
@@ -137,52 +147,67 @@ class _PlayerState extends State<_Player> {
     _initPlayer();
   }
 
-  /// Резолвит URL через HTTP — следует редиректам, возвращает финальный URL
-  Future<String> _resolveUrl(String url) async {
-    debugPrint('SHORTS resolving URL: $url');
-    try {
-      // Делаем HEAD запрос чтобы получить финальный URL после редиректов
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Accept': '*/*',
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36',
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      debugPrint('SHORTS resolve: status=${response.statusCode} url=${response.request?.url}');
-      debugPrint('SHORTS resolve: content-type=${response.headers['content-type']}');
-      debugPrint('SHORTS resolve: content-length=${response.headers['content-length']}');
-
-      // Если редирект — вернём финальный URL
-      final finalUrl = response.request?.url.toString() ?? url;
-      debugPrint('SHORTS resolved URL: $finalUrl');
-      return finalUrl;
-    } catch (e) {
-      debugPrint('SHORTS resolve error: $e, using original URL');
-      return url;
-    }
-  }
-
   Future<void> _initPlayer() async {
     final originalUrl = abs(widget.short.videoUrl);
-    debugPrint('SHORTS player init original: $originalUrl');
+    debugPrint('SHORTS player init: $originalUrl');
 
     try {
-      // Шаг 1: Резолвим URL (следуем редиректам)
-      _resolvedUrl = await _resolveUrl(originalUrl);
-      debugPrint('SHORTS player init resolved: $_resolvedUrl');
+      // === Шаг 1: Скачиваем видео через HTTP ===
+      setState(() => _downloadProgress = 0);
 
-      // Шаг 2: Загружаем видео с финальным URL
-      _videoCtrl = VideoPlayerController.networkUrl(
-        Uri.parse(_resolvedUrl!),
-        httpHeaders: const {
-          'Accept': '*/*',
+      final response = await http.get(
+        Uri.parse(originalUrl),
+        headers: {
+          'Accept': 'video/*, application/octet-stream, */*',
           'Referer': 'https://layn.su/',
           'Origin': 'https://layn.su',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36',
+          if (widget.cookieHeader.isNotEmpty) 'Cookie': widget.cookieHeader,
         },
-      );
+      ).timeout(const Duration(seconds: 30));
 
+      debugPrint('SHORTS download status: ${response.statusCode}');
+      debugPrint('SHORTS download content-type: ${response.headers['content-type']}');
+      debugPrint('SHORTS download content-length: ${response.headers['content-length']}');
+
+      // Логируем redirects
+      final reqUrl = response.request?.url.toString() ?? originalUrl;
+      if (reqUrl != originalUrl) {
+        debugPrint('SHORTS redirected to: $reqUrl');
+      }
+
+      if (response.statusCode != 200) {
+        // Попробуем второй раз (сервер может требовать cookies)
+        debugPrint('SHORTS retrying with different headers...');
+        final retry = await http.get(
+          Uri.parse(reqUrl),
+          headers: {
+            'Accept': 'video/mp4, video/webm, */*',
+            'User-Agent': 'ExoPlayerLib/2.19.1',
+          },
+        ).timeout(const Duration(seconds: 30));
+
+        debugPrint('SHORTS retry status: ${retry.statusCode}');
+        debugPrint('SHORTS retry content-type: ${retry.headers['content-type']}');
+
+        if (retry.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode} / ${retry.statusCode}');
+        }
+        // Сохраняем retry результат
+        _tempFile = await _saveTempFile(retry.bodyBytes, widget.short.id);
+      } else {
+        _tempFile = await _saveTempFile(response.bodyBytes, widget.short.id);
+      }
+
+      debugPrint('SHORTS saved to: ${_tempFile!.path} (${_tempFile!.lengthSync()} bytes)');
+
+      // Проверяем что файл не пустой и не HTML
+      final firstBytes = _tempFile!.readAsBytesSync().take(100).toList();
+      final asString = String.fromCharCodes(firstBytes.where((b) => b >= 32 && b < 127));
+      debugPrint('SHORTS file header: $asString');
+
+      // === Шаг 2: Воспроизводим локальный файл ===
+      _videoCtrl = VideoPlayerController.file(_tempFile!);
       await _videoCtrl!.initialize();
 
       if (!mounted) return;
@@ -198,19 +223,30 @@ class _PlayerState extends State<_Player> {
         aspectRatio: _videoCtrl!.value.aspectRatio,
       );
 
-      setState(() => _ready = true);
+      setState(() {
+        _ready = true;
+        _downloadProgress = 0;
+      });
     } catch (e) {
       debugPrint('SHORTS player error: $e');
-      debugPrint('SHORTS original URL: $originalUrl');
-      debugPrint('SHORTS resolved URL: $_resolvedUrl');
+      debugPrint('SHORTS URL: $originalUrl');
       if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  Future<File> _saveTempFile(List<int> bytes, int id) async {
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/short_$id.mp4');
+    await file.writeAsBytes(bytes);
+    return file;
   }
 
   @override
   void dispose() {
     _chewieCtrl?.dispose();
     _videoCtrl?.dispose();
+    // Удаляем временный файл
+    _tempFile?.deleteSync();
     super.dispose();
   }
 
@@ -241,6 +277,8 @@ class _PlayerState extends State<_Player> {
                 child: Chewie(controller: _chewieCtrl!),
               ),
             )
+          else if (_downloadProgress > 0 && _downloadProgress < 1)
+            _buildDownloading()
           else
             _buildLoading(),
 
@@ -249,6 +287,7 @@ class _PlayerState extends State<_Player> {
               child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72),
             ),
 
+          // Info overlay
           Positioned(
             left: 16,
             right: 60,
@@ -266,6 +305,7 @@ class _PlayerState extends State<_Player> {
             ]),
           ),
 
+          // Right buttons
           Positioned(
             right: 12,
             bottom: MediaQuery.of(context).padding.bottom + 100,
@@ -278,6 +318,7 @@ class _PlayerState extends State<_Player> {
             ]),
           ),
 
+          // Progress bar
           if (_ready)
             Positioned(
               left: 0, right: 0, bottom: 0,
@@ -300,41 +341,65 @@ class _PlayerState extends State<_Player> {
       fit: StackFit.expand,
       children: [
         if (widget.short.thumbnailUrl.isNotEmpty)
-          Image.network(
-            widget.short.thumbnailUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const SizedBox(),
-          ),
+          Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox()),
         Container(
           color: Colors.black54,
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                const SizedBox(height: 12),
-                const Text('Ошибка загрузки видео',
-                    style: TextStyle(color: Colors.white70, fontSize: 14)),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(_resolvedUrl ?? widget.short.videoUrl,
-                      style: const TextStyle(color: Colors.white38, fontSize: 10),
-                      maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.tonal(
-                  onPressed: () {
-                    setState(() { _error = null; _ready = false; _resolvedUrl = null; });
-                    _videoCtrl?.dispose();
-                    _chewieCtrl?.dispose();
-                    _initPlayer();
-                  },
-                  child: const Text('Повторить'),
-                ),
-              ],
-            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 48),
+              const SizedBox(height: 12),
+              const Text('Ошибка загрузки видео',
+                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(widget.short.videoUrl,
+                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+                    maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: () {
+                  setState(() { _error = null; _ready = false; _downloadProgress = 0; });
+                  _chewieCtrl?.dispose();
+                  _videoCtrl?.dispose();
+                  _initPlayer();
+                },
+                child: const Text('Повторить'),
+              ),
+            ]),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDownloading() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (widget.short.thumbnailUrl.isNotEmpty)
+          Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox()),
+        Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+              width: 200,
+              child: LinearProgressIndicator(
+                value: _downloadProgress > 0 ? _downloadProgress : null,
+                backgroundColor: Colors.white24,
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF6C5CE7)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _downloadProgress > 0
+                  ? '${(_downloadProgress * 100).toStringAsFixed(0)}%'
+                  : 'Загрузка видео...',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ]),
         ),
       ],
     );
