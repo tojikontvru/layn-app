@@ -50,11 +50,11 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> register(String username, String email, String password, String name) async {
+  Future<void> register(String username, String email, String password) async {
     _loading = true;
     notifyListeners();
     try {
-      final d = await api.register(username, email, password, name);
+      final d = await api.register(username, email, password);
       _saveSession(d);
     } finally {
       _loading = false;

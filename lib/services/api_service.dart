@@ -101,11 +101,11 @@ class ApiService {
     return d;
   }
 
-  Future<Map<String, dynamic>> register(String username, String email, String password, String name) async {
+  Future<Map<String, dynamic>> register(String username, String email, String password) async {
     final d = await post('/register', body: {
-      'username': username, 'email': email, 'password': password, 'firstname': name,
+      'username': username, 'email': email, 'password': password, 'firstname': username,
     });
-    final t = d['token'] ?? d['data']?['token'];
+    final t = d['data']?['token'] ?? d['token'];
     if (t != null) _token = t.toString();
     return d;
   }

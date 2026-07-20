@@ -175,7 +175,7 @@ class _ShortPlayerState extends State<ShortPlayer> {
   }
 
   void _onShare() {
-    Share.share('${widget.short.title}\nhttps://layn.su/video/${widget.short.id}');
+    Share.share('${widget.short.title}\nhttps://layn.su/play/${widget.short.id}/shorts');
   }
 
   void _showLoginPrompt() {

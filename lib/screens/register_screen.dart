@@ -35,7 +35,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _usernameCtrl.text.trim(),
         _emailCtrl.text.trim(),
         _passwordCtrl.text,
-        _nameCtrl.text.trim(),
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
