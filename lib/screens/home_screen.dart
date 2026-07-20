@@ -13,7 +13,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _videos = <Video>[];
   final _categories = <Category>[];
-  final _shortsUrls = <String>{};
+  final _shortsIds = <int>{};
   bool _loading = true;
   String? _error;
   int _page = 1;
@@ -27,27 +27,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAll() async {
-    // Параллельно загружаем категории и URL шортсов
+    // Параллельно загружаем категории и ID шортсов
     await Future.wait([
       _loadCategories(),
-      _loadShortsUrls(),
+      _loadShortsIds(),
     ]);
     // Затем загружаем видео
     await _loadVideos();
   }
 
-  Future<void> _loadShortsUrls() async {
+  Future<void> _loadShortsIds() async {
     try {
-      final urls = await ApiService.instance.shortsUrls();
-      // Нормализуем для сравнения
-      final normalized = urls.map(normalizeUrl).toSet();
-      if (mounted) setState(() => _shortsUrls.addAll(normalized));
-      debugPrint('SHORTS URLs loaded: ${_shortsUrls.length} urls (raw: ${urls.length})');
-      if (_shortsUrls.isNotEmpty) {
-        debugPrint('SHORTS sample URLs: ${_shortsUrls.take(3).join('\n  ')}');
-      }
+      final ids = await ApiService.instance.shortsIds();
+      if (mounted) setState(() => _shortsIds.addAll(ids));
+      debugPrint('SHORTS IDs loaded: ${_shortsIds.length}');
     } catch (e) {
-      debugPrint('Failed to load shorts URLs: $e');
+      debugPrint('Failed to load shorts IDs: $e');
     }
   }
 
@@ -73,19 +68,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final d = await ApiService.instance.home(page: _page, category: _selectedCategory);
       final videosRaw = (d['data']?['videos'] as List? ?? []);
-      debugPrint('HOME videos: ${videosRaw.length}, shorts urls: ${_shortsUrls.length}');
-      
+      debugPrint('HOME videos: ${videosRaw.length}, shorts IDs: ${_shortsIds.length}');
+
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
           .where((v) {
-        // Исключаем если isShorts=true
+        // Исключаем если is_shorts=1 (из API)
         if (v.isShorts) return false;
-        // Исключаем по совпадению URL (нормализованное сравнение)
-        final normalized = normalizeUrl(v.videoUrl);
-        if (normalized.isNotEmpty && _shortsUrls.contains(normalized)) return false;
+        // Исключаем по ID (из /api/v1/shorts)
+        if (_shortsIds.contains(v.id)) return false;
         return true;
       }).toList();
-      
+
       debugPrint('HOME after filter: ${list.length} videos (removed ${videosRaw.length - list.length} shorts)');
       setState(() {
         _videos.clear();
@@ -109,13 +103,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // ===== ШАПКА =====
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
         centerTitle: false,
         title: Row(children: [
-          // Логотип
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Image.asset(
@@ -141,12 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 4),
         ],
       ),
-
       body: Column(children: [
-        // ===== КАТЕГОРИИ =====
         _buildCategories(),
-
-        // ===== ВИДЕО =====
         Expanded(child: _buildBody()),
       ]),
     );
@@ -160,9 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         children: [
-          // "Все"
           _catChip('Все', null),
-          // Категории из API
           ..._categories.map((c) => _catChip(c.name, c.slug)),
         ],
       ),

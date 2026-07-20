@@ -50,17 +50,17 @@ class ApiService {
   Future<List<Category>> categories() async {
     try {
       final d = await get('/categories');
-      // Try different response structures
-      dynamic raw = d['data'] ?? d['categories'] ?? d;
-      if (raw is Map) {
-        // Could be {data: {categories: [...]}} or flat map
-        raw = raw['categories'] ?? raw['data'] ?? raw.values.firstWhere((v) => v is List, orElse: () => []);
+      // API returns: {status: 'success', data: {categories: [...]}}
+      final catsData = d['data'];
+      if (catsData is Map) {
+        final cats = catsData['categories'];
+        if (cats is List) {
+          return cats.map((e) => Category.fromJson(e as Map<String, dynamic>)).toList();
+        }
       }
-      if (raw is List) {
-        return raw.map((e) {
-          if (e is Map<String, dynamic>) return Category.fromJson(e);
-          return Category(id: 0, name: e.toString(), slug: '');
-        }).toList();
+      // Fallback: data is directly a list
+      if (catsData is List) {
+        return catsData.map((e) => Category.fromJson(e as Map<String, dynamic>)).toList();
       }
       return [];
     } catch (_) {
@@ -121,45 +121,39 @@ class ApiService {
 
   // === Shorts ===
   Future<List<dynamic>> shorts({int page = 1}) async {
-    final r = await http.get(Uri.parse('$shortsUrl?page=$page'), headers: {'Accept': 'application/json'});
+    final r = await http.get(Uri.parse('$shortsUrl?page=$page'), headers: _h);
     if (r.statusCode >= 200 && r.statusCode < 300) {
       final d = jsonDecode(r.body) as Map<String, dynamic>;
-      return (d['data']?['videos'] as List?) ?? [];
+      return (d['data']?['shorts'] ?? d['data']?['videos'] ?? []) as List;
     }
     throw HttpException('HTTP ${r.statusCode}');
   }
 
-  /// Загружает шортсы и возвращает Set URL видео (для исключения с главной)
-  Future<Set<String>> shortsUrls() async {
-    final urls = <String>{};
+  /// Загружает шортсы и возвращает Set ID (для исключения с главной)
+  Future<Set<int>> shortsIds() async {
+    final ids = <int>{};
     try {
       for (int page = 1; page <= 3; page++) {
-        // Загружаем БЕЗ Accept: application/json — как shorts_screen.dart
-        final r = await http.get(Uri.parse('$shortsUrl?page=$page'));
+        final r = await http.get(Uri.parse('$shortsUrl?page=$page'), headers: _h);
         if (r.statusCode != 200) {
-          debugPrint('shortsUrls page=$page: HTTP ${r.statusCode}');
+          debugPrint('shortsIds page=$page: HTTP ${r.statusCode}');
           break;
         }
         final d = jsonDecode(r.body) as Map<String, dynamic>;
         final shortsList = Short.fromResponse(d);
-        debugPrint('shortsUrls page=$page: ${shortsList.length} shorts');
+        debugPrint('shortsIds page=$page: ${shortsList.length} shorts');
         if (shortsList.isEmpty) break;
         for (final s in shortsList) {
-          if (s.videoUrl.isNotEmpty) {
-            urls.add(normalizeUrl(s.videoUrl));
-          }
+          ids.add(s.id);
         }
         final meta = d['data'] ?? {};
         final lastPage = meta['last_page'] ?? 1;
         if (page >= lastPage) break;
       }
     } catch (e) {
-      debugPrint('shortsUrls error: $e');
+      debugPrint('shortsIds error: $e');
     }
-    debugPrint('SHORTS URLs total: ${urls.length}');
-    if (urls.isNotEmpty) {
-      debugPrint('SHORTS sample: ${urls.take(3).join(', ')}');
-    }
-    return urls;
+    debugPrint('SHORTS IDs total: ${ids.length}');
+    return ids;
   }
 }

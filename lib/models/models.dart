@@ -83,17 +83,17 @@ class Video {
         id: j['id'] ?? 0,
         title: j['title'] ?? '',
         description: j['description'] ?? '',
-        thumbnailUrl: j['thumbnail_url'] ?? j['thumb'] ?? '',
+        thumbnailUrl: j['thumb'] ?? j['thumbnail_url'] ?? '',
         videoUrl: j['video_url'] ?? '',
-        username: j['username'] ?? j['user']?['username'] ?? '',
+        username: j['user']?['username'] ?? j['username'] ?? '',
         views: j['views'] ?? 0,
         duration: j['duration'] ?? '',
         createdAt: j['created_at'] ?? '',
-        isShorts: j['is_shorts_video'] ?? false,
-        channelName: j['channel_name'] ?? j['firstname'] ?? j['user']?['channel_name'] ?? j['user']?['firstname'],
-        avatar: abs(j['avatar'] ?? j['user']?['avatar'] ?? ''),
+        isShorts: (j['is_shorts'] ?? j['is_shorts_video'] ?? 0) == 1,
+        channelName: j['user']?['channel_name'] ?? j['channel_name'] ?? j['firstname'],
+        avatar: abs(j['user']?['avatar'] ?? j['avatar'] ?? ''),
         commentsCount: j['comments_count'],
-        categorySlug: j['category_slug'] ?? j['slug'] ?? j['category']?['slug'],
+        categorySlug: j['category']?['slug'] ?? j['category_slug'] ?? j['slug'],
       );
 }
 
@@ -142,6 +142,9 @@ class Short {
   final String videoUrl;
   final String thumbnailUrl;
   final int views;
+  final String username;
+  final String avatar;
+  final String channelName;
 
   Short({
     required this.id,
@@ -149,22 +152,31 @@ class Short {
     required this.videoUrl,
     this.thumbnailUrl = '',
     this.views = 0,
+    this.username = '',
+    this.avatar = '',
+    this.channelName = '',
   });
 
   static List<Short> fromResponse(Map<String, dynamic> resp) {
     final data = resp['data'];
     if (data == null) return [];
 
-    final videos = data['videos'];
+    // API /api/v1/shorts returns {data: {shorts: [...]}}
+    final videos = data['shorts'] ?? data['videos'];
     if (videos is List) {
       return videos.asMap().entries.map((e) {
         final j = e.value as Map<String, dynamic>;
+        // videoData() returns user as nested object
+        final user = j['user'];
         return Short(
           id: j['id'] ?? e.key + 1,
           title: j['title'] ?? '',
           videoUrl: abs(j['video_url'] ?? ''),
-          thumbnailUrl: abs(j['thumbnail_url'] ?? j['thumb'] ?? ''),
+          thumbnailUrl: abs(j['thumb'] ?? j['thumbnail_url'] ?? ''),
           views: j['views'] ?? 0,
+          username: user?['username'] ?? j['username'] ?? '',
+          avatar: abs(user?['avatar'] ?? j['avatar'] ?? ''),
+          channelName: user?['channel_name'] ?? j['channel_name'] ?? '',
         );
       }).toList();
     }
