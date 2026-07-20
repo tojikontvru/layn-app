@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 import '../constants.dart';
 import '../models/models.dart';
 
@@ -27,12 +28,31 @@ class _ShortsScreenState extends State<ShortsScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final r = await http.get(
-        Uri.parse('$shortsUrl?page=$_page'),
-      );
+      final r = await http.get(Uri.parse('$shortsUrl?page=$_page'));
+      debugPrint('SHORTS API response: ${r.statusCode}, ${r.body.length} bytes');
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
+      
+      // Логируем структуру ответа
+      debugPrint('SHORTS data keys: ${(d['data'] as Map?)?.keys?.toList()}');
+      final videos = d['data']?['videos'];
+      if (videos is String) {
+        debugPrint('SHORTS videos is HTML: ${videos.length} chars');
+        debugPrint('SHORTS HTML preview: ${videos.substring(0, videos.length.clamp(0, 500))}');
+      } else if (videos is List) {
+        debugPrint('SHORTS videos is JSON: ${videos.length} items');
+        if (videos.isNotEmpty) {
+          debugPrint('SHORTS first item keys: ${(videos[0] as Map).keys.toList()}');
+          debugPrint('SHORTS first item: ${videos[0]}');
+        }
+      }
+      
       final shorts = Short.fromResponse(d);
+      debugPrint('SHORTS parsed: ${shorts.length} shorts');
+      for (final s in shorts) {
+        debugPrint('  #${s.id}: url="${s.videoUrl}" title="${s.title}"');
+      }
+      
       final meta = d['data'] ?? {};
       setState(() {
         _shorts = shorts;
@@ -41,6 +61,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
         _loading = false;
       });
     } catch (e) {
+      debugPrint('SHORTS load error: $e');
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
@@ -81,9 +102,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
   void _loadMore() async {
     final nextPage = _page + 1;
     try {
-      final r = await http.get(
-        Uri.parse('$shortsUrl?page=$nextPage'),
-      );
+      final r = await http.get(Uri.parse('$shortsUrl?page=$nextPage'));
       if (r.statusCode != 200) return;
       final d = jsonDecode(r.body) as Map<String, dynamic>;
       final more = Short.fromResponse(d);
@@ -107,7 +126,8 @@ class _Player extends StatefulWidget {
 }
 
 class _PlayerState extends State<_Player> {
-  late VideoPlayerController _ctrl;
+  VideoPlayerController? _videoCtrl;
+  ChewieController? _chewieCtrl;
   bool _ready = false;
   bool _paused = false;
   String? _error;
@@ -115,27 +135,58 @@ class _PlayerState extends State<_Player> {
   @override
   void initState() {
     super.initState();
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
     final url = abs(widget.short.videoUrl);
     debugPrint('SHORTS player init: $url');
-    _ctrl = VideoPlayerController.networkUrl(Uri.parse(url))
-      ..initialize().then((_) {
-        if (mounted) { setState(() => _ready = true); _ctrl.play(); }
-      }).catchError((e) {
-        debugPrint('SHORTS player error: $e');
-        if (mounted) setState(() => _error = e.toString());
-      });
+    
+    try {
+      _videoCtrl = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: const {
+          'Accept': '*/*',
+          'Referer': 'https://layn.su/',
+          'Origin': 'https://layn.su',
+        },
+      );
+      
+      await _videoCtrl!.initialize();
+      
+      if (!mounted) return;
+      
+      _chewieCtrl = ChewieController(
+        videoPlayerController: _videoCtrl!,
+        autoPlay: true,
+        looping: true,
+        showControls: false,
+        showControlsOnInitialize: false,
+        allowFullScreen: false,
+        allowMuting: false,
+        aspectRatio: _videoCtrl!.value.aspectRatio,
+      );
+      
+      setState(() => _ready = true);
+    } catch (e) {
+      debugPrint('SHORTS player error: $e');
+      debugPrint('SHORTS player URL was: $url');
+      if (mounted) setState(() => _error = e.toString());
+    }
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _chewieCtrl?.dispose();
+    _videoCtrl?.dispose();
     super.dispose();
   }
 
   void _toggle() {
+    if (_chewieCtrl == null) return;
     setState(() {
-      _paused ? _ctrl.play() : _ctrl.pause();
       _paused = !_paused;
+      _paused ? _chewieCtrl!.pause() : _chewieCtrl!.play();
     });
   }
 
@@ -146,34 +197,32 @@ class _PlayerState extends State<_Player> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _error != null
-              ? Center(child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                    const SizedBox(height: 12),
-                    Text('Ошибка загрузки', style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                    const SizedBox(height: 8),
-                    Text(_error!, style: const TextStyle(color: Colors.white38, fontSize: 11),
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
-                  ],
-                ))
-              : _ready
-                  ? FittedBox(
-                      fit: BoxFit.cover,
-                      clipBehavior: Clip.hardEdge,
-                      child: SizedBox(
-                        width: _ctrl.value.size.width,
-                        height: _ctrl.value.size.height,
-                        child: VideoPlayer(_ctrl),
-                      ),
-                    )
-                  : const Center(child: CircularProgressIndicator(color: Colors.white)),
+          // Video or error or loading
+          if (_error != null)
+            _buildError()
+          else if (_ready && _chewieCtrl != null)
+            FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox(
+                width: _videoCtrl!.value.size.width,
+                height: _videoCtrl!.value.size.height,
+                child: Chewie(controller: _chewieCtrl!),
+              ),
+            )
+          else
+            _buildLoading(),
+
+          // Pause overlay
           if (_paused)
-            const Center(child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72)),
+            const Center(
+              child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72),
+            ),
+
           // Info
           Positioned(
-            left: 16, right: 60,
+            left: 16,
+            right: 60,
             bottom: MediaQuery.of(context).padding.bottom + 24,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (widget.short.title.isNotEmpty)
@@ -187,6 +236,7 @@ class _PlayerState extends State<_Player> {
               ],
             ]),
           ),
+
           // Right buttons
           Positioned(
             right: 12,
@@ -199,16 +249,84 @@ class _PlayerState extends State<_Player> {
               _btn(Icons.share, ''),
             ]),
           ),
+
           // Progress
           if (_ready)
             Positioned(
               left: 0, right: 0, bottom: 0,
-              child: VideoProgressIndicator(_ctrl, allowScrubbing: true,
-                  colors: const VideoProgressColors(playedColor: Color(0xFF6C5CE7), bufferedColor: Colors.white24)),
+              child: VideoProgressIndicator(
+                _videoCtrl!,
+                allowScrubbing: true,
+                colors: const VideoProgressColors(
+                  playedColor: Color(0xFF6C5CE7),
+                  bufferedColor: Colors.white24,
+                ),
+              ),
             ),
         ],
       ),
     );
+  }
+
+  Widget _buildError() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Thumbnail fallback
+        if (widget.short.thumbnailUrl.isNotEmpty)
+          Image.network(
+            widget.short.thumbnailUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox(),
+          ),
+        // Error overlay
+        Container(
+          color: Colors.black54,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                const SizedBox(height: 12),
+                const Text('Ошибка загрузки видео',
+                    style: TextStyle(color: Colors.white70, fontSize: 14)),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(widget.short.videoUrl,
+                      style: const TextStyle(color: Colors.white38, fontSize: 10),
+                      maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: () {
+                    setState(() { _error = null; _ready = false; });
+                    _videoCtrl?.dispose();
+                    _chewieCtrl?.dispose();
+                    _initPlayer();
+                  },
+                  child: const Text('Повторить'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoading() {
+    if (widget.short.thumbnailUrl.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(widget.short.thumbnailUrl, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox()),
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
+        ],
+      );
+    }
+    return const Center(child: CircularProgressIndicator(color: Colors.white));
   }
 
   Widget _btn(IconData icon, String label) => Column(children: [
