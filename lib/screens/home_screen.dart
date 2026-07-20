@@ -116,13 +116,14 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: false,
         title: Row(children: [
           // Логотип
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE53935),
-              borderRadius: BorderRadius.circular(8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset(
+              'assets/images/logo.png',
+              height: 32,
+              width: 32,
+              fit: BoxFit.cover,
             ),
-            child: const Icon(Icons.play_arrow, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 8),
           const Text('Layn',

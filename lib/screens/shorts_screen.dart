@@ -29,7 +29,6 @@ class _ShortsScreenState extends State<ShortsScreen> {
     try {
       final r = await http.get(
         Uri.parse('$shortsUrl?page=$_page'),
-        headers: {'Accept': 'application/json'},
       );
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
@@ -84,7 +83,6 @@ class _ShortsScreenState extends State<ShortsScreen> {
     try {
       final r = await http.get(
         Uri.parse('$shortsUrl?page=$nextPage'),
-        headers: {'Accept': 'application/json'},
       );
       if (r.statusCode != 200) return;
       final d = jsonDecode(r.body) as Map<String, dynamic>;
@@ -112,14 +110,20 @@ class _PlayerState extends State<_Player> {
   late VideoPlayerController _ctrl;
   bool _ready = false;
   bool _paused = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.short.videoUrl))
+    final url = abs(widget.short.videoUrl);
+    debugPrint('SHORTS player init: $url');
+    _ctrl = VideoPlayerController.networkUrl(Uri.parse(url))
       ..initialize().then((_) {
         if (mounted) { setState(() => _ready = true); _ctrl.play(); }
-      }).catchError((_) {});
+      }).catchError((e) {
+        debugPrint('SHORTS player error: $e');
+        if (mounted) setState(() => _error = e.toString());
+      });
   }
 
   @override
@@ -142,17 +146,29 @@ class _PlayerState extends State<_Player> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _ready
-              ? FittedBox(
-                  fit: BoxFit.cover,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(
-                    width: _ctrl.value.size.width,
-                    height: _ctrl.value.size.height,
-                    child: VideoPlayer(_ctrl),
-                  ),
-                )
-              : const Center(child: CircularProgressIndicator(color: Colors.white)),
+          _error != null
+              ? Center(child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                    const SizedBox(height: 12),
+                    Text('Ошибка загрузки', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Text(_error!, style: const TextStyle(color: Colors.white38, fontSize: 11),
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ],
+                ))
+              : _ready
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox(
+                        width: _ctrl.value.size.width,
+                        height: _ctrl.value.size.height,
+                        child: VideoPlayer(_ctrl),
+                      ),
+                    )
+                  : const Center(child: CircularProgressIndicator(color: Colors.white)),
           if (_paused)
             const Center(child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72)),
           // Info
