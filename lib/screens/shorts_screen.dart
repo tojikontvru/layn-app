@@ -32,13 +32,11 @@ class _ShortsScreenState extends State<ShortsScreen> {
       debugPrint('SHORTS API response: ${r.statusCode}, ${r.body.length} bytes');
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
-      
-      // Логируем структуру ответа
+
       debugPrint('SHORTS data keys: ${(d['data'] as Map?)?.keys?.toList()}');
       final videos = d['data']?['videos'];
       if (videos is String) {
         debugPrint('SHORTS videos is HTML: ${videos.length} chars');
-        debugPrint('SHORTS HTML preview: ${videos.substring(0, videos.length.clamp(0, 500))}');
       } else if (videos is List) {
         debugPrint('SHORTS videos is JSON: ${videos.length} items');
         if (videos.isNotEmpty) {
@@ -46,13 +44,13 @@ class _ShortsScreenState extends State<ShortsScreen> {
           debugPrint('SHORTS first item: ${videos[0]}');
         }
       }
-      
+
       final shorts = Short.fromResponse(d);
       debugPrint('SHORTS parsed: ${shorts.length} shorts');
       for (final s in shorts) {
         debugPrint('  #${s.id}: url="${s.videoUrl}" title="${s.title}"');
       }
-      
+
       final meta = d['data'] ?? {};
       setState(() {
         _shorts = shorts;
@@ -131,6 +129,7 @@ class _PlayerState extends State<_Player> {
   bool _ready = false;
   bool _paused = false;
   String? _error;
+  String? _resolvedUrl;
 
   @override
   void initState() {
@@ -138,24 +137,56 @@ class _PlayerState extends State<_Player> {
     _initPlayer();
   }
 
-  Future<void> _initPlayer() async {
-    final url = abs(widget.short.videoUrl);
-    debugPrint('SHORTS player init: $url');
-    
+  /// Резолвит URL через HTTP — следует редиректам, возвращает финальный URL
+  Future<String> _resolveUrl(String url) async {
+    debugPrint('SHORTS resolving URL: $url');
     try {
-      _videoCtrl = VideoPlayerController.networkUrl(
+      // Делаем HEAD запрос чтобы получить финальный URL после редиректов
+      final response = await http.get(
         Uri.parse(url),
+        headers: {
+          'Accept': '*/*',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      debugPrint('SHORTS resolve: status=${response.statusCode} url=${response.request?.url}');
+      debugPrint('SHORTS resolve: content-type=${response.headers['content-type']}');
+      debugPrint('SHORTS resolve: content-length=${response.headers['content-length']}');
+
+      // Если редирект — вернём финальный URL
+      final finalUrl = response.request?.url.toString() ?? url;
+      debugPrint('SHORTS resolved URL: $finalUrl');
+      return finalUrl;
+    } catch (e) {
+      debugPrint('SHORTS resolve error: $e, using original URL');
+      return url;
+    }
+  }
+
+  Future<void> _initPlayer() async {
+    final originalUrl = abs(widget.short.videoUrl);
+    debugPrint('SHORTS player init original: $originalUrl');
+
+    try {
+      // Шаг 1: Резолвим URL (следуем редиректам)
+      _resolvedUrl = await _resolveUrl(originalUrl);
+      debugPrint('SHORTS player init resolved: $_resolvedUrl');
+
+      // Шаг 2: Загружаем видео с финальным URL
+      _videoCtrl = VideoPlayerController.networkUrl(
+        Uri.parse(_resolvedUrl!),
         httpHeaders: const {
           'Accept': '*/*',
           'Referer': 'https://layn.su/',
           'Origin': 'https://layn.su',
         },
       );
-      
+
       await _videoCtrl!.initialize();
-      
+
       if (!mounted) return;
-      
+
       _chewieCtrl = ChewieController(
         videoPlayerController: _videoCtrl!,
         autoPlay: true,
@@ -166,11 +197,12 @@ class _PlayerState extends State<_Player> {
         allowMuting: false,
         aspectRatio: _videoCtrl!.value.aspectRatio,
       );
-      
+
       setState(() => _ready = true);
     } catch (e) {
       debugPrint('SHORTS player error: $e');
-      debugPrint('SHORTS player URL was: $url');
+      debugPrint('SHORTS original URL: $originalUrl');
+      debugPrint('SHORTS resolved URL: $_resolvedUrl');
       if (mounted) setState(() => _error = e.toString());
     }
   }
@@ -197,7 +229,6 @@ class _PlayerState extends State<_Player> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Video or error or loading
           if (_error != null)
             _buildError()
           else if (_ready && _chewieCtrl != null)
@@ -213,13 +244,11 @@ class _PlayerState extends State<_Player> {
           else
             _buildLoading(),
 
-          // Pause overlay
           if (_paused)
             const Center(
               child: Icon(Icons.pause_circle_outline, color: Colors.white70, size: 72),
             ),
 
-          // Info
           Positioned(
             left: 16,
             right: 60,
@@ -237,7 +266,6 @@ class _PlayerState extends State<_Player> {
             ]),
           ),
 
-          // Right buttons
           Positioned(
             right: 12,
             bottom: MediaQuery.of(context).padding.bottom + 100,
@@ -250,7 +278,6 @@ class _PlayerState extends State<_Player> {
             ]),
           ),
 
-          // Progress
           if (_ready)
             Positioned(
               left: 0, right: 0, bottom: 0,
@@ -272,14 +299,12 @@ class _PlayerState extends State<_Player> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Thumbnail fallback
         if (widget.short.thumbnailUrl.isNotEmpty)
           Image.network(
             widget.short.thumbnailUrl,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => const SizedBox(),
           ),
-        // Error overlay
         Container(
           color: Colors.black54,
           child: Center(
@@ -293,14 +318,14 @@ class _PlayerState extends State<_Player> {
                 const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(widget.short.videoUrl,
+                  child: Text(_resolvedUrl ?? widget.short.videoUrl,
                       style: const TextStyle(color: Colors.white38, fontSize: 10),
                       maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
                 ),
                 const SizedBox(height: 12),
                 FilledButton.tonal(
                   onPressed: () {
-                    setState(() { _error = null; _ready = false; });
+                    setState(() { _error = null; _ready = false; _resolvedUrl = null; });
                     _videoCtrl?.dispose();
                     _chewieCtrl?.dispose();
                     _initPlayer();
