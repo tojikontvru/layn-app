@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
-import '../models/models.dart' show abs;
 
 class AuthProvider extends ChangeNotifier {
   final ApiService api;
@@ -55,7 +54,7 @@ class AuthProvider extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final d = await api.register(username, email, password);
+      final d = await api.register(username, email, password, name);
       _saveSession(d);
     } finally {
       _loading = false;
