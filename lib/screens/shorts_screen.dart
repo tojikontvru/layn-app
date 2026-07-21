@@ -303,14 +303,14 @@ class _ShortsScreenState extends State<ShortsScreen> {
     final short = _shorts[_currentIndex];
     final isLiked = _likedMap[short.id] ?? false;
     final padding = MediaQuery.of(context).padding;
-    // Height reserved for bottom nav + progress bar
-    const bottomBarHeight = 80.0;
+    // Height reserved for progress bar only
+    const progressBarHeight = 40.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Column(
         children: [
-          // === MAIN CONTENT AREA (everything above bottom bar) ===
+          // === MAIN CONTENT AREA ===
           Expanded(
             child: Stack(
               children: [
@@ -431,7 +431,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                 // === BOTTOM INFO ===
                 Positioned(
                   left: 12, right: 72,
-                  bottom: bottomBarHeight + 16,
+                  bottom: progressBarHeight + 8,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -498,7 +498,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
                 // === RIGHT SIDE BUTTONS ===
                 Positioned(
-                  right: 8, bottom: bottomBarHeight + 20,
+                  right: 8, bottom: progressBarHeight + 60,
                   child: Column(
                     children: [
                       _actionButton(

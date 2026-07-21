@@ -173,7 +173,7 @@ class Short {
 
   String get shareUrl {
     final s = slug ?? title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'-+'), '-').replaceAll(RegExp(r'^-|-$'), '');
-    return 'https://layn.su/play/$id/$s';
+    return 'https://layn.su/short-play/$id/$s';
   }
 
   static List<Short> fromResponse(Map<String, dynamic> resp) {
