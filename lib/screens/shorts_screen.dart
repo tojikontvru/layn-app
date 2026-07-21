@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -18,7 +19,8 @@ class ShortsScreen extends StatefulWidget {
   State<ShortsScreen> createState() => _ShortsScreenState();
 }
 
-class _ShortsScreenState extends State<ShortsScreen> {
+class _ShortsScreenState extends State<ShortsScreen>
+    with SingleTickerProviderStateMixin {
   List<Short> _shorts = [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -27,15 +29,28 @@ class _ShortsScreenState extends State<ShortsScreen> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
-  // Active video
+  // Video
   VideoPlayerController? _vpc;
   bool _isPlaying = false;
   bool _isInitialized = false;
+  bool _isMuted = false;
+
+  // Like
+  final Map<int, bool> _likedMap = {};
+
+  // Double tap like animation
+  bool _showHeart = false;
+  Timer? _heartTimer;
+  DateTime? _lastTap;
+  Offset _heartPosition = Offset.zero;
+
+  // Play/pause icon
   bool _showPlayIcon = false;
   Timer? _hidePlayTimer;
 
-  // Likes
-  final Map<int, bool> _likedMap = {};
+  // Progress
+  double _progress = 0.0;
+  Timer? _progressTimer;
 
   @override
   void initState() {
@@ -89,8 +104,8 @@ class _ShortsScreenState extends State<ShortsScreen> {
   Future<void> _playVideo(int index) async {
     if (index < 0 || index >= _shorts.length) return;
 
-    // Dispose old
     _vpc?.dispose();
+    _progressTimer?.cancel();
 
     final short = _shorts[index];
     final url = abs(short.videoUrl);
@@ -99,6 +114,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
     setState(() {
       _isInitialized = false;
       _isPlaying = false;
+      _progress = 0.0;
     });
 
     try {
@@ -107,7 +123,20 @@ class _ShortsScreenState extends State<ShortsScreen> {
       if (!mounted) return;
 
       _vpc!.setLooping(true);
+      _vpc!.setVolume(_isMuted ? 0 : 1);
       await _vpc!.play();
+
+      // Listen to progress
+      _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
+        if (_vpc != null && _vpc!.value.isInitialized && mounted) {
+          final dur = _vpc!.value.duration.inMilliseconds;
+          if (dur > 0) {
+            setState(() {
+              _progress = _vpc!.value.position.inMilliseconds / dur;
+            });
+          }
+        }
+      });
 
       if (mounted) {
         setState(() {
@@ -141,9 +170,43 @@ class _ShortsScreenState extends State<ShortsScreen> {
     });
   }
 
+  void _toggleMute() {
+    if (_vpc == null) return;
+    setState(() => _isMuted = !_isMuted);
+    _vpc!.setVolume(_isMuted ? 0 : 1);
+  }
+
+  void _handleTap(TapDownDetails details) {
+    final now = DateTime.now();
+    if (_lastTap != null && now.difference(_lastTap!).inMilliseconds < 300) {
+      // Double tap - like
+      _lastTap = null;
+      final short = _shorts[_currentIndex];
+      final isLiked = _likedMap[short.id] ?? false;
+      if (!isLiked) {
+        _likedMap[short.id] = true;
+        final api = Provider.of<ApiService>(context, listen: false);
+        api.reaction(short.id, 'like').catchError((_) {});
+      }
+      setState(() {
+        _heartPosition = details.localPosition;
+        _showHeart = true;
+      });
+      _heartTimer?.cancel();
+      _heartTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) setState(() => _showHeart = false);
+      });
+    } else {
+      _lastTap = now;
+      _togglePlayPause();
+    }
+  }
+
   @override
   void dispose() {
+    _heartTimer?.cancel();
     _hidePlayTimer?.cancel();
+    _progressTimer?.cancel();
     _vpc?.dispose();
     _pageController.dispose();
     WakelockPlus.disable();
@@ -154,9 +217,32 @@ class _ShortsScreenState extends State<ShortsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/logo.png',
+                width: 60,
+                height: 60,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.play_circle_fill,
+                  size: 60,
+                  color: Colors.red.shade400,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2),
+              ),
+            ],
+          ),
+        ),
       );
     }
     if (_shorts.isEmpty) {
@@ -178,11 +264,15 @@ class _ShortsScreenState extends State<ShortsScreen> {
       );
     }
 
+    final short = _shorts[_currentIndex];
+    final isLiked = _likedMap[short.id] ?? false;
+    final padding = MediaQuery.of(context).padding;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Full screen page view
+          // === PAGE VIEW ===
           PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
@@ -193,16 +283,14 @@ class _ShortsScreenState extends State<ShortsScreen> {
               if (index >= _shorts.length - 3) _loadMore();
             },
             itemBuilder: (context, index) {
-              final short = _shorts[index];
+              final s = _shorts[index];
               final isCurrent = index == _currentIndex;
-              final isLiked = _likedMap[short.id] ?? false;
-
               return GestureDetector(
-                onTap: _togglePlayPause,
+                onTapDown: isCurrent ? _handleTap : null,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // VIDEO
+                    // Video
                     if (isCurrent && _isInitialized && _vpc != null)
                       Center(
                         child: AspectRatio(
@@ -213,232 +301,40 @@ class _ShortsScreenState extends State<ShortsScreen> {
                         ),
                       )
                     else if (isCurrent)
-                      // Loading state
-                      CachedNetworkImage(
-                        imageUrl: short.thumbnailUrl.isNotEmpty
-                            ? short.thumbnailUrl
-                            : '',
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
-                          color: Colors.black,
-                          child: const Center(
-                            child: CircularProgressIndicator(color: Colors.white),
-                          ),
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                          color: Colors.black,
-                          child: const Center(
-                            child: Icon(Icons.error, color: Colors.white54, size: 48),
-                          ),
-                        ),
-                      )
+                      _buildSkeleton(s)
                     else
                       CachedNetworkImage(
-                        imageUrl: short.thumbnailUrl.isNotEmpty
-                            ? short.thumbnailUrl
-                            : '',
+                        imageUrl: s.thumbnailUrl,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(color: Colors.black),
+                        errorWidget: (_, __, ___) =>
+                            Container(color: Colors.black),
                       ),
-
-                    // Play/Pause icon overlay (center)
-                    if (_showPlayIcon)
-                      Center(
-                        child: AnimatedOpacity(
-                          opacity: _showPlayIcon ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 200),
-                          child: Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              _isPlaying ? Icons.play_arrow : Icons.pause,
-                              color: Colors.white,
-                              size: 48,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // === BOTTOM GRADIENT ===
-                    Positioned(
-                      left: 0, right: 0, bottom: 0,
-                      child: Container(
-                        height: 300,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Colors.black87],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // === BOTTOM INFO (like YouTube Shorts) ===
-                    Positioned(
-                      left: 12,
-                      right: 72,
-                      bottom: MediaQuery.of(context).padding.bottom + 60,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Channel name
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 14,
-                                backgroundColor: Colors.grey.shade800,
-                                backgroundImage: short.avatar.isNotEmpty
-                                    ? CachedNetworkImageProvider(abs(short.avatar))
-                                    : null,
-                                child: short.avatar.isEmpty
-                                    ? Text(
-                                        short.channelName.isNotEmpty
-                                            ? short.channelName[0].toUpperCase()
-                                            : short.username.isNotEmpty
-                                                ? short.username[0].toUpperCase()
-                                                : '?',
-                                        style: const TextStyle(
-                                            fontSize: 11, color: Colors.white),
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  short.channelName.isNotEmpty
-                                      ? short.channelName
-                                      : short.username,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    shadows: [
-                                      Shadow(blurRadius: 4, color: Colors.black54),
-                                    ],
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Title
-                          Text(
-                            short.title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              height: 1.3,
-                              shadows: [
-                                Shadow(blurRadius: 4, color: Colors.black54),
-                              ],
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          // Views
-                          if (short.views > 0)
-                            Text(
-                              '${_formatViews(short.views)} просмотров',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.85),
-                                fontSize: 12,
-                                shadows: const [
-                                  Shadow(blurRadius: 3, color: Colors.black54),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    // === RIGHT SIDE BUTTONS (YouTube Shorts style) ===
-                    Positioned(
-                      right: 8,
-                      bottom: MediaQuery.of(context).padding.bottom + 80,
-                      child: Column(
-                        children: [
-                          // Like
-                          _actionButton(
-                            icon: isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                            color: isLiked ? const Color(0xFF3EA6FF) : Colors.white,
-                            onTap: () async {
-                              final auth = Provider.of<AuthProvider>(context, listen: false);
-                              if (!auth.isAuth) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Войдите, чтобы ставить лайки')),
-                                );
-                                return;
-                              }
-                              try {
-                                final api = Provider.of<ApiService>(context, listen: false);
-                                await api.reaction(short.id, 'like');
-                                setState(() {
-                                  _likedMap[short.id] = !(isLiked);
-                                });
-                              } catch (_) {}
-                            },
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Dislike
-                          _actionButton(
-                            icon: Icons.thumb_down_outlined,
-                            color: Colors.white,
-                            onTap: () {},
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Comments
-                          _actionButton(
-                            icon: Icons.chat_bubble_outline,
-                            color: Colors.white,
-                            onTap: () {},
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Share
-                          _actionButton(
-                            icon: Icons.share,
-                            color: Colors.white,
-                            onTap: () => Share.share(short.shareUrl),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // More
-                          _actionButton(
-                            icon: Icons.more_vert,
-                            color: Colors.white,
-                            onTap: () => _showMoreSheet(short),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  
                   ],
                 ),
               );
             },
           ),
 
-          // === TOP BAR (YouTube Shorts style) ===
+          // === BOTTOM GRADIENT ===
           Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
+            left: 0, right: 0, bottom: 0,
             child: Container(
-              padding: EdgeInsets.fromLTRB(
-                  16, MediaQuery.of(context).padding.top + 8, 16, 8),
+              height: 320,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black87],
+                ),
+              ),
+            ),
+          ),
+
+          // === TOP GRADIENT ===
+          Positioned(
+            left: 0, right: 0, top: 0,
+            child: Container(
+              height: 80 + padding.top,
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
@@ -446,35 +342,332 @@ class _ShortsScreenState extends State<ShortsScreen> {
                   colors: [Colors.transparent, Colors.black54],
                 ),
               ),
+            ),
+          ),
+
+          // === TOP BAR ===
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(16, padding.top + 8, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.play_circle,
-                      color: Colors.white,
-                      size: 24),
+                  Icon(Icons.play_circle, color: Colors.white, size: 24),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Shorts',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                  const Text('Shorts',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  // Mute button
+                  GestureDetector(
+                    onTap: _toggleMute,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _isMuted ? Icons.volume_off : Icons.volume_up,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   IconButton(
                     icon: const Icon(Icons.search, color: Colors.white),
-                    onPressed: () {
-                      Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const SearchScreen()));
-                    },
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const SearchScreen())),
                   ),
                 ],
               ),
             ),
           ),
+
+          // === BOTTOM INFO ===
+          Positioned(
+            left: 12,
+            right: 72,
+            bottom: padding.bottom + 60,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Channel
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Colors.grey.shade800,
+                      backgroundImage: short.avatar.isNotEmpty
+                          ? CachedNetworkImageProvider(abs(short.avatar))
+                          : null,
+                      child: short.avatar.isEmpty
+                          ? Text(
+                              short.channelName.isNotEmpty
+                                  ? short.channelName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.white),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      short.channelName.isNotEmpty
+                          ? short.channelName
+                          : short.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(width: 12),
+                    // Subscribe
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Подписаться',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // Title
+                Text(
+                  short.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                // Views
+                if (short.views > 0)
+                  Text(
+                    '${_formatViews(short.views)} просмотров',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 12,
+                      shadows: const [
+                        Shadow(blurRadius: 3, color: Colors.black54),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // === RIGHT SIDE BUTTONS ===
+          Positioned(
+            right: 8,
+            bottom: padding.bottom + 80,
+            child: Column(
+              children: [
+                // Like
+                _actionButton(
+                  icon: isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  label: isLiked ? '' : '',
+                  color: isLiked ? const Color(0xFF3EA6FF) : Colors.white,
+                  onTap: () async {
+                    final auth = Provider.of<AuthProvider>(context, listen: false);
+                    if (!auth.isAuth) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Войдите, чтобы ставить лайки')),
+                      );
+                      return;
+                    }
+                    try {
+                      final api =
+                          Provider.of<ApiService>(context, listen: false);
+                      await api.reaction(short.id, 'like');
+                      setState(() => _likedMap[short.id] = !isLiked);
+                    } catch (_) {}
+                  },
+                ),
+                const SizedBox(height: 20),
+                // Dislike
+                _actionButton(
+                  icon: Icons.thumb_down_outlined,
+                  label: '',
+                  color: Colors.white,
+                  onTap: () {},
+                ),
+                const SizedBox(height: 20),
+                // Comments
+                _actionButton(
+                  icon: Icons.chat_bubble_outline,
+                  label: '',
+                  color: Colors.white,
+                  onTap: () => _showCommentsSheet(short),
+                ),
+                const SizedBox(height: 20),
+                // Share
+                _actionButton(
+                  icon: Icons.share,
+                  label: '',
+                  color: Colors.white,
+                  onTap: () => Share.share(short.shareUrl),
+                ),
+                const SizedBox(height: 20),
+                // More
+                _actionButton(
+                  icon: Icons.more_vert,
+                  label: '',
+                  color: Colors.white,
+                  onTap: () => _showMoreSheet(short),
+                ),
+              ],
+            ),
+          ),
+
+          // === PROGRESS BAR ===
+          Positioned(
+            left: 0, right: 0,
+            bottom: padding.bottom + 40,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: _progress.clamp(0.0, 1.0),
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(Colors.white),
+                        minHeight: 2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // === DOUBLE TAP HEART ===
+          if (_showHeart)
+            Positioned(
+              left: _heartPosition.dx - 36,
+              top: _heartPosition.dy - 36,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 300),
+                builder: (_, scale, child) => Transform.scale(
+                  scale: scale,
+                  child: Opacity(
+                    opacity: (1.0 - scale).clamp(0.0, 1.0),
+                    child: child,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.favorite,
+                  color: Colors.red,
+                  size: 72,
+                ),
+              ),
+            ),
+
+          // === PLAY/PAUSE CENTER ICON ===
+          if (_showPlayIcon)
+            Center(
+              child: AnimatedOpacity(
+                opacity: _showPlayIcon ? 0.8 : 0.0,
+                duration: const Duration(milliseconds: 150),
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isPlaying ? Icons.play_arrow : Icons.pause,
+                    color: Colors.white,
+                    size: 40,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSkeleton(Short short) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CachedNetworkImage(
+          imageUrl: short.thumbnailUrl,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(
+            color: Colors.black,
+            child: const Center(
+              child: CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2),
+            ),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            color: Colors.black,
+            child: const Center(
+              child: Icon(Icons.error_outline, color: Colors.white54, size: 48),
+            ),
+          ),
+        ),
+        // Loading overlay
+        if (!_isInitialized)
+          Container(
+            color: Colors.black.withOpacity(0.3),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: CircularProgressIndicator(
+                      color: Colors.white.withOpacity(0.8),
+                      strokeWidth: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Загрузка...',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -486,6 +679,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
   Widget _actionButton({
     required IconData icon,
+    required String label,
     required Color color,
     required VoidCallback onTap,
   }) {
@@ -503,7 +697,62 @@ class _ShortsScreenState extends State<ShortsScreen> {
             ),
             child: Icon(icon, color: color, size: 24),
           ),
+          if (label.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(label,
+                style: const TextStyle(color: Colors.white, fontSize: 10)),
+          ],
         ],
+      ),
+    );
+  }
+
+  void _showCommentsSheet(Short short) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            // Handle
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade600,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Text('Комментарии',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const Divider(height: 1),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.chat_bubble_outline,
+                        size: 48,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 12),
+                    Text('Комментарии скоро появятся',
+                        style: TextStyle(
+                            color:
+                                Theme.of(context).textTheme.bodySmall?.color)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -520,8 +769,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               decoration: BoxDecoration(
                 color: Colors.grey.shade600,
