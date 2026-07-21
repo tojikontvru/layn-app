@@ -36,13 +36,13 @@ class _ShortsScreenState extends State<ShortsScreen> {
   // Like
   final Map<int, bool> _likedMap = {};
 
-  // Double tap like animation
+  // Double tap
   bool _showHeart = false;
   Timer? _heartTimer;
   DateTime? _lastTap;
   Offset _heartPosition = Offset.zero;
 
-  // Play/pause icon
+  // Play/pause
   bool _showPlayIcon = false;
   Timer? _hidePlayTimer;
 
@@ -63,8 +63,9 @@ class _ShortsScreenState extends State<ShortsScreen> {
     setState(() => _loading = true);
     try {
       final api = Provider.of<ApiService>(context, listen: false);
-      final data = await api.shorts(page: _currentPage);
-      final newShorts = Short.fromResponse({'data': {'shorts': data}});
+      final rawData = await api.shorts(page: _currentPage);
+      final newShorts = Short.fromResponse({'data': {'shorts': rawData}});
+      // Filter: show shorts even without videoUrl (will show thumbnail)
       if (mounted) {
         setState(() {
           _shorts.addAll(newShorts);
@@ -72,10 +73,19 @@ class _ShortsScreenState extends State<ShortsScreen> {
           if (newShorts.isEmpty) _hasMore = false;
         });
         if (_shorts.isNotEmpty && _currentPage == 1) {
-          _playVideo(0);
+          // Find first short with video to play
+          int firstPlayable = 0;
+          for (int i = 0; i < _shorts.length; i++) {
+            if (_shorts[i].videoUrl.isNotEmpty) {
+              firstPlayable = i;
+              break;
+            }
+          }
+          _playVideo(firstPlayable);
         }
       }
     } catch (e) {
+      debugPrint('Shorts load error: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -86,8 +96,8 @@ class _ShortsScreenState extends State<ShortsScreen> {
     _currentPage++;
     try {
       final api = Provider.of<ApiService>(context, listen: false);
-      final data = await api.shorts(page: _currentPage);
-      final newShorts = Short.fromResponse({'data': {'shorts': data}});
+      final rawData = await api.shorts(page: _currentPage);
+      final newShorts = Short.fromResponse({'data': {'shorts': rawData}});
       if (mounted) {
         setState(() {
           _shorts.addAll(newShorts);
@@ -108,7 +118,16 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
     final short = _shorts[index];
     final url = abs(short.videoUrl);
-    if (url.isEmpty) return;
+
+    // If no video URL, just show thumbnail (no playback)
+    if (url.isEmpty) {
+      setState(() {
+        _isInitialized = false;
+        _isPlaying = false;
+        _progress = 0.0;
+      });
+      return;
+    }
 
     setState(() {
       _isInitialized = false;
@@ -143,7 +162,13 @@ class _ShortsScreenState extends State<ShortsScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Shorts play error: $e');
+      debugPrint('Shorts play error index=$index: $e');
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+          _isPlaying = false;
+        });
+      }
     }
   }
 
@@ -151,16 +176,10 @@ class _ShortsScreenState extends State<ShortsScreen> {
     if (_vpc == null || !_isInitialized) return;
     if (_vpc!.value.isPlaying) {
       _vpc!.pause();
-      setState(() {
-        _isPlaying = false;
-        _showPlayIcon = true;
-      });
+      setState(() { _isPlaying = false; _showPlayIcon = true; });
     } else {
       _vpc!.play();
-      setState(() {
-        _isPlaying = true;
-        _showPlayIcon = true;
-      });
+      setState(() { _isPlaying = true; _showPlayIcon = true; });
     }
     _hidePlayTimer?.cancel();
     _hidePlayTimer = Timer(const Duration(milliseconds: 600), () {
@@ -177,7 +196,6 @@ class _ShortsScreenState extends State<ShortsScreen> {
   void _handleTap(TapDownDetails details) {
     final now = DateTime.now();
     if (_lastTap != null && now.difference(_lastTap!).inMilliseconds < 300) {
-      // Double tap — like with heart
       _lastTap = null;
       final short = _shorts[_currentIndex];
       final isLiked = _likedMap[short.id] ?? false;
@@ -206,17 +224,13 @@ class _ShortsScreenState extends State<ShortsScreen> {
     if (box == null) return;
     final dx = details.localPosition.dx.clamp(0.0, box.size.width);
     final pct = dx / box.size.width;
-    setState(() {
-      _progress = pct;
-      _seeking = true;
-    });
+    setState(() { _progress = pct; _seeking = true; });
   }
 
   void _onSeekEnd(DragEndDetails details) {
     if (_vpc == null || !_vpc!.value.isInitialized) return;
     final dur = _vpc!.value.duration;
-    final pos = Duration(
-        milliseconds: (dur.inMilliseconds * _progress).round());
+    final pos = Duration(milliseconds: (dur.inMilliseconds * _progress).round());
     _vpc!.seekTo(pos);
     setState(() => _seeking = false);
   }
@@ -243,21 +257,14 @@ class _ShortsScreenState extends State<ShortsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Image.asset(
-                'assets/images/logo.png',
-                width: 60,
-                height: 60,
+                'assets/images/logo.png', width: 60, height: 60,
                 errorBuilder: (_, __, ___) => Icon(
-                  Icons.play_circle_fill,
-                  size: 60,
-                  color: Colors.red.shade400,
-                ),
+                    Icons.play_circle_fill, size: 60, color: Colors.red.shade400),
               ),
               const SizedBox(height: 16),
               const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
+                width: 24, height: 24,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
               ),
             ],
           ),
@@ -271,12 +278,11 @@ class _ShortsScreenState extends State<ShortsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.play_circle_outline,
-                  size: 64, color: Colors.white.withOpacity(0.5)),
+              Icon(Icons.play_circle_outline, size: 64,
+                  color: Colors.white.withOpacity(0.5)),
               const SizedBox(height: 12),
               Text('Нет шортсов',
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.7), fontSize: 16)),
+                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16)),
             ],
           ),
         ),
@@ -286,360 +292,328 @@ class _ShortsScreenState extends State<ShortsScreen> {
     final short = _shorts[_currentIndex];
     final isLiked = _likedMap[short.id] ?? false;
     final padding = MediaQuery.of(context).padding;
+    // Height reserved for bottom nav + progress bar
+    const bottomBarHeight = 80.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
+      body: Column(
         children: [
-          // === PAGE VIEW ===
-          PageView.builder(
-            controller: _pageController,
-            scrollDirection: Axis.vertical,
-            itemCount: _shorts.length,
-            onPageChanged: (index) {
-              setState(() => _currentIndex = index);
-              _playVideo(index);
-              if (index >= _shorts.length - 3) _loadMore();
-            },
-            itemBuilder: (context, index) {
-              final s = _shorts[index];
-              final isCurrent = index == _currentIndex;
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Video
-                  if (isCurrent && _isInitialized && _vpc != null)
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: _vpc!.value.aspectRatio > 0
-                            ? _vpc!.value.aspectRatio
-                            : 9 / 16,
-                        child: VideoPlayer(_vpc!),
-                      ),
-                    )
-                  else if (isCurrent)
-                    _buildSkeleton(s)
-                  else
-                    CachedNetworkImage(
-                      imageUrl: s.thumbnailUrl,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          Container(color: Colors.black),
-                    ),
-
-                  // Tap overlay ONLY on current page — no gesture conflict with PageView
-                  if (isCurrent)
-                    Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTapDown: _handleTap,
-                        child: Container(color: Colors.transparent),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-
-          // === BOTTOM GRADIENT ===
-          Positioned(
-            left: 0, right: 0, bottom: 0,
-            child: Container(
-              height: 320,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black87],
-                ),
-              ),
-            ),
-          ),
-
-          // === TOP GRADIENT ===
-          Positioned(
-            left: 0, right: 0, top: 0,
-            child: Container(
-              height: 80 + padding.top,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [Colors.transparent, Colors.black54],
-                ),
-              ),
-            ),
-          ),
-
-          // === TOP BAR ===
-          Positioned(
-            top: 0, left: 0, right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(16, padding.top + 8, 16, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.play_circle, color: Colors.white, size: 24),
-                  const SizedBox(width: 8),
-                  const Text('Shorts',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  // Mute
-                  GestureDetector(
-                    onTap: _toggleMute,
-                    child: Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.4),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _isMuted ? Icons.volume_off : Icons.volume_up,
-                        color: Colors.white, size: 18,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.search, color: Colors.white),
-                    onPressed: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const SearchScreen())),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // === BOTTOM INFO ===
-          Positioned(
-            left: 12, right: 72,
-            bottom: padding.bottom + 70,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+          // === MAIN CONTENT AREA (everything above bottom bar) ===
+          Expanded(
+            child: Stack(
               children: [
-                // Channel
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 14,
-                      backgroundColor: Colors.grey.shade800,
-                      backgroundImage: short.avatar.isNotEmpty
-                          ? CachedNetworkImageProvider(abs(short.avatar))
-                          : null,
-                      child: short.avatar.isEmpty
-                          ? Text(
-                              short.channelName.isNotEmpty
-                                  ? short.channelName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                  fontSize: 11, color: Colors.white))
-                          : null,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      short.channelName.isNotEmpty
-                          ? short.channelName
-                          : short.username,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text('Подписаться',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ],
+                // === PAGE VIEW ===
+                PageView.builder(
+                  controller: _pageController,
+                  scrollDirection: Axis.vertical,
+                  itemCount: _shorts.length,
+                  onPageChanged: (index) {
+                    setState(() => _currentIndex = index);
+                    _playVideo(index);
+                    if (index >= _shorts.length - 3) _loadMore();
+                  },
+                  itemBuilder: (context, index) {
+                    final s = _shorts[index];
+                    final isCurrent = index == _currentIndex;
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Video or thumbnail
+                        if (isCurrent && _isInitialized && _vpc != null)
+                          Center(
+                            child: AspectRatio(
+                              aspectRatio: _vpc!.value.aspectRatio > 0
+                                  ? _vpc!.value.aspectRatio
+                                  : 9 / 16,
+                              child: VideoPlayer(_vpc!),
+                            ),
+                          )
+                        else if (isCurrent)
+                          _buildSkeleton(s)
+                        else
+                          CachedNetworkImage(
+                            imageUrl: s.thumbnailUrl,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(color: Colors.black),
+                          ),
+
+                        // Tap overlay
+                        if (isCurrent)
+                          Positioned.fill(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTapDown: _handleTap,
+                              child: Container(color: Colors.transparent),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 10),
-                // Title
-                Text(
-                  short.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    height: 1.3,
-                    shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+
+                // === BOTTOM GRADIENT ===
+                Positioned(
+                  left: 0, right: 0, bottom: 0,
+                  child: Container(
+                    height: 280,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black87],
+                      ),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 6),
-                if (short.views > 0)
-                  Text(
-                    '${_formatViews(short.views)} просмотров',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.85),
-                      fontSize: 12,
-                      shadows: const [
-                        Shadow(blurRadius: 3, color: Colors.black54),
+
+                // === TOP GRADIENT ===
+                Positioned(
+                  left: 0, right: 0, top: 0,
+                  child: Container(
+                    height: 80 + padding.top,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.transparent, Colors.black54],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // === TOP BAR ===
+                Positioned(
+                  top: 0, left: 0, right: 0,
+                  child: Container(
+                    padding: EdgeInsets.fromLTRB(16, padding.top + 8, 16, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.play_circle, color: Colors.white, size: 24),
+                        const SizedBox(width: 8),
+                        const Text('Shorts',
+                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: _toggleMute,
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.4),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(_isMuted ? Icons.volume_off : Icons.volume_up,
+                                color: Colors.white, size: 18),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.search, color: Colors.white),
+                          onPressed: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const SearchScreen())),
+                        ),
                       ],
                     ),
                   ),
-              ],
-            ),
-          ),
+                ),
 
-          // === RIGHT SIDE BUTTONS ===
-          Positioned(
-            right: 8, bottom: padding.bottom + 80,
-            child: Column(
-              children: [
-                // Heart (Instagram style)
-                _actionButton(
-                  icon: isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: isLiked ? Colors.red : Colors.white,
-                  onTap: () async {
-                    final auth = Provider.of<AuthProvider>(context, listen: false);
-                    if (!auth.isAuth) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Войдите, чтобы ставить лайки')),
-                      );
-                      return;
-                    }
-                    try {
-                      final api = Provider.of<ApiService>(context, listen: false);
-                      await api.reaction(short.id, 'like');
-                      setState(() => _likedMap[short.id] = !isLiked);
-                    } catch (_) {}
-                  },
-                ),
-                const SizedBox(height: 20),
-                // Comments
-                _actionButton(
-                  icon: Icons.chat_bubble_outline,
-                  color: Colors.white,
-                  onTap: () => _showCommentsSheet(short),
-                ),
-                const SizedBox(height: 20),
-                // Share
-                _actionButton(
-                  icon: Icons.share,
-                  color: Colors.white,
-                  onTap: () => Share.share(short.shareUrl),
-                ),
-                const SizedBox(height: 20),
-                // More
-                _actionButton(
-                  icon: Icons.more_vert,
-                  color: Colors.white,
-                  onTap: () => _showMoreSheet(short),
-                ),
-              ],
-            ),
-          ),
-
-          // === RED PROGRESS BAR — tappable/seekable ===
-          Positioned(
-            left: 0, right: 0,
-            bottom: padding.bottom + 56,
-            child: GestureDetector(
-              onHorizontalDragUpdate: _onSeek,
-              onHorizontalDragEnd: _onSeekEnd,
-              onTapDown: (d) {
-                if (_vpc == null || !_vpc!.value.isInitialized) return;
-                final box = context.findRenderObject() as RenderBox?;
-                if (box == null) return;
-                final dx = d.localPosition.dx.clamp(0.0, box.size.width);
-                final pct = dx / box.size.width;
-                final dur = _vpc!.value.duration;
-                final pos = Duration(
-                    milliseconds: (dur.inMilliseconds * pct).round());
-                _vpc!.seekTo(pos);
-                setState(() => _progress = pct);
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Scrubber handle
-                    if (_seeking)
-                      Align(
-                        alignment: Alignment(_progress * 2 - 1, 0),
-                        child: Container(
-                          width: 12, height: 12,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
+                // === BOTTOM INFO ===
+                Positioned(
+                  left: 12, right: 72,
+                  bottom: bottomBarHeight + 16,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: Colors.grey.shade800,
+                            backgroundImage: short.avatar.isNotEmpty
+                                ? CachedNetworkImageProvider(abs(short.avatar))
+                                : null,
+                            child: short.avatar.isEmpty
+                                ? Text(short.channelName.isNotEmpty
+                                    ? short.channelName[0].toUpperCase()
+                                    : '?',
+                                    style: const TextStyle(fontSize: 11, color: Colors.white))
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              short.channelName.isNotEmpty ? short.channelName : short.username,
+                              style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14,
+                                shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                              ),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text('Подписаться',
+                                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        short.title,
+                        style: const TextStyle(
+                          color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500, height: 1.3,
+                          shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                        ),
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      if (short.views > 0)
+                        Text(
+                          '${_formatViews(short.views)} просмотров',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.85), fontSize: 12,
+                            shadows: const [Shadow(blurRadius: 3, color: Colors.black54)],
                           ),
                         ),
+                    ],
+                  ),
+                ),
+
+                // === RIGHT SIDE BUTTONS ===
+                Positioned(
+                  right: 8, bottom: bottomBarHeight + 20,
+                  child: Column(
+                    children: [
+                      _actionButton(
+                        icon: isLiked ? Icons.favorite : Icons.favorite_border,
+                        color: isLiked ? Colors.red : Colors.white,
+                        onTap: () async {
+                          final auth = Provider.of<AuthProvider>(context, listen: false);
+                          if (!auth.isAuth) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Войдите, чтобы ставить лайки')),
+                            );
+                            return;
+                          }
+                          try {
+                            final api = Provider.of<ApiService>(context, listen: false);
+                            await api.reaction(short.id, 'like');
+                            setState(() => _likedMap[short.id] = !isLiked);
+                          } catch (_) {}
+                        },
                       ),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: _progress.clamp(0.0, 1.0),
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
-                        minHeight: 3,
+                      const SizedBox(height: 20),
+                      _actionButton(
+                        icon: Icons.chat_bubble_outline, color: Colors.white,
+                        onTap: () => _showCommentsSheet(short),
+                      ),
+                      const SizedBox(height: 20),
+                      _actionButton(
+                        icon: Icons.share, color: Colors.white,
+                        onTap: () => Share.share(short.shareUrl),
+                      ),
+                      const SizedBox(height: 20),
+                      _actionButton(
+                        icon: Icons.more_vert, color: Colors.white,
+                        onTap: () => _showMoreSheet(short),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // === DOUBLE TAP HEART ===
+                if (_showHeart)
+                  Positioned(
+                    left: _heartPosition.dx - 36,
+                    top: _heartPosition.dy - 36,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: const Duration(milliseconds: 300),
+                      builder: (_, scale, child) => Transform.scale(
+                        scale: scale,
+                        child: Opacity(
+                          opacity: (1.0 - scale).clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      ),
+                      child: const Icon(Icons.favorite, color: Colors.red, size: 72),
+                    ),
+                  ),
+
+                // === PLAY/PAUSE CENTER ===
+                if (_showPlayIcon)
+                  Center(
+                    child: AnimatedOpacity(
+                      opacity: _showPlayIcon ? 0.8 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Container(
+                        width: 64, height: 64,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5), shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isPlaying ? Icons.play_arrow : Icons.pause,
+                          color: Colors.white, size: 40,
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+              ],
             ),
           ),
 
-          // === DOUBLE TAP HEART ANIMATION ===
-          if (_showHeart)
-            Positioned(
-              left: _heartPosition.dx - 36,
-              top: _heartPosition.dy - 36,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 300),
-                builder: (_, scale, child) => Transform.scale(
-                  scale: scale,
-                  child: Opacity(
-                    opacity: (1.0 - scale).clamp(0.0, 1.0),
-                    child: child,
+          // === FIXED PROGRESS BAR — NEVER MOVES ===
+          GestureDetector(
+            onHorizontalDragUpdate: _onSeek,
+            onHorizontalDragEnd: _onSeekEnd,
+            onTapDown: (d) {
+              if (_vpc == null || !_vpc!.value.isInitialized) return;
+              final box = context.findRenderObject() as RenderBox?;
+              if (box == null) return;
+              // Calculate position relative to progress bar width
+              final rb = box;
+              final w = rb.size.width;
+              final dx = d.localPosition.dx.clamp(0.0, w);
+              final pct = dx / w;
+              final dur = _vpc!.value.duration;
+              final pos = Duration(milliseconds: (dur.inMilliseconds * pct).round());
+              _vpc!.seekTo(pos);
+              setState(() => _progress = pct);
+            },
+            child: Container(
+              color: Colors.black,
+              padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Scrubber handle
+                  if (_seeking)
+                    Align(
+                      alignment: Alignment(_progress * 2 - 1, 0),
+                      child: Container(
+                        width: 12, height: 12,
+                        margin: const EdgeInsets.only(bottom: 2),
+                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                      ),
+                    ),
+                  SizedBox(
+                    height: 3,
+                    child: LinearProgressIndicator(
+                      value: _progress.clamp(0.0, 1.0),
+                      backgroundColor: Colors.white.withOpacity(0.2),
+                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
+                    ),
                   ),
-                ),
-                child: const Icon(
-                  Icons.favorite,
-                  color: Colors.red,
-                  size: 72,
-                ),
+                ],
               ),
             ),
-
-          // === PLAY/PAUSE CENTER ===
-          if (_showPlayIcon)
-            Center(
-              child: AnimatedOpacity(
-                opacity: _showPlayIcon ? 0.8 : 0.0,
-                duration: const Duration(milliseconds: 150),
-                child: Container(
-                  width: 64, height: 64,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _isPlaying ? Icons.play_arrow : Icons.pause,
-                    color: Colors.white, size: 40,
-                  ),
-                ),
-              ),
-            ),
+          ),
         ],
       ),
     );
@@ -655,8 +629,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
           placeholder: (_, __) => Container(
             color: Colors.black,
             child: const Center(
-              child: CircularProgressIndicator(
-                  color: Colors.white, strokeWidth: 2),
+              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
             ),
           ),
           errorWidget: (_, __, ___) => Container(
@@ -681,8 +654,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text('Загрузка...',
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
                 ],
               ),
             ),
@@ -710,8 +682,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
           Container(
             width: 44, height: 44,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              shape: BoxShape.circle,
+              color: Colors.black.withOpacity(0.3), shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 24),
           ),
@@ -739,8 +710,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
               width: 40, height: 4,
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade600,
-                borderRadius: BorderRadius.circular(2),
+                color: Colors.grey.shade600, borderRadius: BorderRadius.circular(2),
               ),
             ),
             const Text('Комментарии',
@@ -755,8 +725,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                         color: Theme.of(context).colorScheme.primary),
                     const SizedBox(height: 12),
                     Text('Комментарии скоро появятся',
-                        style: TextStyle(
-                            color: Theme.of(context).textTheme.bodySmall?.color)),
+                        style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
                   ],
                 ),
               ),
@@ -782,17 +751,13 @@ class _ShortsScreenState extends State<ShortsScreen> {
               width: 40, height: 4,
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade600,
-                borderRadius: BorderRadius.circular(2),
+                color: Colors.grey.shade600, borderRadius: BorderRadius.circular(2),
               ),
             ),
             ListTile(
               leading: const Icon(Icons.share),
               title: const Text('Поделиться'),
-              onTap: () {
-                Navigator.pop(ctx);
-                Share.share(short.shareUrl);
-              },
+              onTap: () { Navigator.pop(ctx); Share.share(short.shareUrl); },
             ),
             ListTile(
               leading: const Icon(Icons.flag_outlined),
