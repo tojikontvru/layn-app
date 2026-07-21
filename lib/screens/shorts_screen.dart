@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:provider/provider.dart';
+import 'search_screen.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
@@ -423,43 +424,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                       ),
                     ),
 
-                    // === TOP RIGHT - Channel avatar (small, for navigation) ===
-                    Positioned(
-                      right: 12,
-                      bottom: MediaQuery.of(context).padding.bottom + 310,
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundColor: Colors.grey.shade800,
-                            backgroundImage: short.avatar.isNotEmpty
-                                ? CachedNetworkImageProvider(abs(short.avatar))
-                                : null,
-                            child: short.avatar.isEmpty
-                                ? Text(
-                                    short.channelName.isNotEmpty
-                                        ? short.channelName[0].toUpperCase()
-                                        : short.username.isNotEmpty
-                                            ? short.username[0].toUpperCase()
-                                            : '?',
-                                    style: const TextStyle(
-                                        fontSize: 14, color: Colors.white),
-                                  )
-                                : null,
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Icon(Icons.add, color: Colors.white, size: 16),
-                          ),
-                        ],
-                      ),
-                    ),
+                  
                   ],
                 ),
               );
@@ -499,7 +464,10 @@ class _ShortsScreenState extends State<ShortsScreen> {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.search, color: Colors.white),
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const SearchScreen()));
+                    },
                   ),
                 ],
               ),
