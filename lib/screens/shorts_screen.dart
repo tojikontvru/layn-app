@@ -421,7 +421,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                                     : null,
                               ),
                               const SizedBox(width: 8),
-                              Expanded(
+                              Flexible(
                                 child: Text(
                                   short.channelName.isNotEmpty ? short.channelName : short.username,
                                   style: const TextStyle(
@@ -431,7 +431,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                                   maxLines: 1, overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                               Builder(builder: (context) {
                                 final auth = Provider.of<AuthProvider>(context);
                                 if (short.userId == null || short.userId == auth.userId) {
