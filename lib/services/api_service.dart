@@ -7,6 +7,7 @@ import '../models/models.dart';
 
 class ApiService {
   static final instance = ApiService._();
+  ApiService();
   ApiService._();
 
   String? _token;
@@ -200,16 +201,23 @@ class ApiService {
     try {
       final d = await get('/subscriptions');
       final data = d['data'];
+      List list;
       if (data is Map) {
-        final subs = data['subscriptions'] ?? data['channels'] ?? data['users'];
-        if (subs is List) {
-          return subs.map((e) => VideoUser.fromJson(e as Map<String, dynamic>)).toList();
-        }
+        list = data['subscriptions'] ?? data['channels'] ?? data['users'] ?? [];
+      } else if (data is List) {
+        list = data;
+      } else {
+        return [];
       }
-      if (data is List) {
-        return data.map((e) => VideoUser.fromJson(e as Map<String, dynamic>)).toList();
-      }
-      return [];
+      return list.map((e) {
+        final m = e as Map<String, dynamic>;
+        return VideoUser(
+          id: m['id'],
+          username: m['username'],
+          channelName: m['channel_name'] ?? m['firstname'],
+          avatar: abs(m['avatar'] ?? m['image'] ?? ''),
+        );
+      }).toList();
     } catch (_) {
       return [];
     }

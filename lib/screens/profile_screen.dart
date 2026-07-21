@@ -261,14 +261,14 @@ class _SubscriptionsPageState extends State<_SubscriptionsPage> {
                     final s = _subs[i];
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundImage: s.avatarUrl != null && s.avatarUrl!.isNotEmpty
-                            ? NetworkImage(s.avatarUrl!)
+                        backgroundImage: s.avatar != null && s.avatar!.isNotEmpty
+                            ? NetworkImage(s.avatar!)
                             : null,
-                        child: s.avatarUrl == null || s.avatarUrl!.isEmpty
-                            ? Text((s.displayName ?? s.username ?? '?')[0].toUpperCase())
+                        child: s.avatar == null || s.avatar!.isEmpty
+                            ? Text((s.channelName ?? s.username ?? '?')[0].toUpperCase())
                             : null,
                       ),
-                      title: Text(s.displayName ?? s.username ?? ''),
+                      title: Text(s.channelName ?? s.username ?? ''),
                       subtitle: Text('@${s.username ?? ''}'),
                     );
                   },

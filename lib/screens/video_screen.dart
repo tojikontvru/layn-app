@@ -515,7 +515,7 @@ class _VideoScreenState extends State<VideoScreen> {
           CircleAvatar(
             radius: 14,
             child: Text(
-              c.username.isNotEmpty ? c.username[0].toUpperCase() : '?',
+              (c.user?.username ?? '').isNotEmpty ? (c.user?.username ?? '?')[0].toUpperCase() : '?',
               style: const TextStyle(fontSize: 12),
             ),
           ),
@@ -525,7 +525,7 @@ class _VideoScreenState extends State<VideoScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  c.username,
+                  c.user?.username ?? '',
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
