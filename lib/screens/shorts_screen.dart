@@ -432,8 +432,12 @@ class _ShortsScreenState extends State<ShortsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              if (short.userId != null && short.userId != auth.userId)
-                                GestureDetector(
+                              Builder(builder: (context) {
+                                final auth = Provider.of<AuthProvider>(context);
+                                if (short.userId == null || short.userId == auth.userId) {
+                                  return const SizedBox.shrink();
+                                }
+                                return GestureDetector(
                                   onTap: () async {
                                     if (!auth.isAuth) {
                                       ScaffoldMessenger.of(context).showSnackBar(
@@ -461,7 +465,8 @@ class _ShortsScreenState extends State<ShortsScreen> {
                                       style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                                     ),
                                   ),
-                                ),
+                                );
+                              }),
                             ],
                           ),
                           const SizedBox(height: 8),
