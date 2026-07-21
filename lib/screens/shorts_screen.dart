@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../constants.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
@@ -30,27 +31,20 @@ class _ShortsScreenState extends State<ShortsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
-      final r = await http.get(
-        Uri.parse('$shortsUrl?page=$_page'),
-        headers: {'Accept': 'application/json'},
-      );
+      final r = await http.get(Uri.parse('$shortsUrl?page=$_page'),
+          headers: {'Accept': 'application/json'});
       if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
       final d = jsonDecode(r.body) as Map<String, dynamic>;
       final shorts = Short.fromResponse(d);
       final meta = d['data'] ?? {};
-      if (mounted) {
-        setState(() {
-          _shorts = shorts;
-          _page = meta['current_page'] ?? 1;
-          _lastPage = meta['last_page'] ?? 1;
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() {
+        _shorts = shorts;
+        _page = meta['current_page'] ?? 1;
+        _lastPage = meta['last_page'] ?? 1;
+        _loading = false;
+      });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
@@ -65,13 +59,11 @@ class _ShortsScreenState extends State<ShortsScreen> {
       final d = jsonDecode(r.body) as Map<String, dynamic>;
       final more = Short.fromResponse(d);
       final meta = d['data'] ?? {};
-      if (mounted) {
-        setState(() {
-          _shorts.addAll(more);
-          _page = meta['current_page'] ?? nextPage;
-          _lastPage = meta['last_page'] ?? _lastPage;
-        });
-      }
+      if (mounted) setState(() {
+        _shorts.addAll(more);
+        _page = meta['current_page'] ?? nextPage;
+        _lastPage = meta['last_page'] ?? _lastPage;
+      });
     } catch (_) {}
   }
 
@@ -122,11 +114,23 @@ class _ShortPlayerState extends State<ShortPlayer> {
   bool _liked = false;
   int _likeCount = 0;
 
+  String get _shareUrl =>
+      'https://layn.su/play/${widget.short.id}/shorts';
+
   @override
   void initState() {
     super.initState();
     _likeCount = widget.short.views;
+    WakelockPlus.enable();
     _initPlayer();
+  }
+
+  @override
+  void dispose() {
+    WakelockPlus.disable();
+    _chewieCtrl?.dispose();
+    _videoCtrl?.dispose();
+    super.dispose();
   }
 
   Future<void> _initPlayer() async {
@@ -149,13 +153,6 @@ class _ShortPlayerState extends State<ShortPlayer> {
     }
   }
 
-  @override
-  void dispose() {
-    _chewieCtrl?.dispose();
-    _videoCtrl?.dispose();
-    super.dispose();
-  }
-
   void _toggle() {
     if (_chewieCtrl == null) return;
     setState(() {
@@ -167,15 +164,12 @@ class _ShortPlayerState extends State<ShortPlayer> {
   void _onLike() async {
     final auth = context.read<AuthProvider>();
     if (!auth.loggedIn) { _showLoginPrompt(); return; }
-    setState(() {
-      _liked = !_liked;
-      _likeCount += _liked ? 1 : -1;
-    });
+    setState(() { _liked = !_liked; _likeCount += _liked ? 1 : -1; });
     try { await ApiService.instance.reaction(widget.short.id, 'like'); } catch (_) {}
   }
 
   void _onShare() {
-    Share.share('${widget.short.title}\nhttps://layn.su/play/${widget.short.id}/shorts');
+    Share.share('${widget.short.title}\n$_shareUrl');
   }
 
   void _showLoginPrompt() {
@@ -190,7 +184,7 @@ class _ShortPlayerState extends State<ShortPlayer> {
           const SizedBox(height: 20),
           SizedBox(width: double.infinity, child: FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
-            onPressed: () { Navigator.pop(context); },
+            onPressed: () => Navigator.pop(context),
             child: const Text('Войти'),
           )),
           const SizedBox(height: 16),
@@ -206,7 +200,6 @@ class _ShortPlayerState extends State<ShortPlayer> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Video
           if (_error != null)
             _buildError()
           else if (_ready && _chewieCtrl != null)
@@ -217,7 +210,6 @@ class _ShortPlayerState extends State<ShortPlayer> {
           else
             _buildLoading(),
 
-          // Pause icon
           if (_paused)
             const Center(child: Icon(Icons.play_arrow, color: Colors.white70, size: 80)),
 
@@ -249,10 +241,8 @@ class _ShortPlayerState extends State<ShortPlayer> {
                   const SizedBox(width: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white54),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.white54),
+                        borderRadius: BorderRadius.circular(4)),
                     child: const Text('Подписаться', style: TextStyle(color: Colors.white, fontSize: 12)),
                   ),
                 ]),
@@ -287,7 +277,7 @@ class _ShortPlayerState extends State<ShortPlayer> {
               const SizedBox(height: 20),
               _sideButton(icon: Icons.chat_bubble_outline, label: '', onTap: () {}),
               const SizedBox(height: 20),
-              _sideButton(icon: Icons.reply, label: '', onTap: _onShare),
+              _sideButton(icon: Icons.arrow_forward, label: '', onTap: _onShare),
               const SizedBox(height: 20),
               Container(
                 width: 36, height: 36,
@@ -300,14 +290,11 @@ class _ShortPlayerState extends State<ShortPlayer> {
             ]),
           ),
 
-          // Progress
           if (_ready)
             Positioned(
               left: 0, right: 0, bottom: 0,
-              child: VideoProgressIndicator(
-                _videoCtrl!, allowScrubbing: false,
-                colors: const VideoProgressColors(playedColor: Colors.red, bufferedColor: Colors.white24),
-              ),
+              child: VideoProgressIndicator(_videoCtrl!, allowScrubbing: false,
+                  colors: const VideoProgressColors(playedColor: Colors.red, bufferedColor: Colors.white24)),
             ),
         ],
       ),
@@ -346,8 +333,7 @@ class _ShortPlayerState extends State<ShortPlayer> {
           const SizedBox(height: 8),
           FilledButton.tonal(onPressed: () {
             setState(() { _error = null; _ready = false; });
-            _videoCtrl?.dispose();
-            _chewieCtrl?.dispose();
+            _videoCtrl?.dispose(); _chewieCtrl?.dispose();
             _initPlayer();
           }, child: const Text('Повторить')),
         ])),

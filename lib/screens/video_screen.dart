@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -21,7 +24,7 @@ class _VideoScreenState extends State<VideoScreen> {
   VideoPlayerController? _videoCtrl;
   ChewieController? _chewieCtrl;
   bool _ready = false;
-  int _tab = 0; // 0=Похожие, 1=Комментарии
+  int _tab = 0;
   final _commentCtrl = TextEditingController();
   List<Comment> _comments = [];
   List<Video> _related = [];
@@ -29,16 +32,29 @@ class _VideoScreenState extends State<VideoScreen> {
   bool _liked = false;
   bool _disliked = false;
   int _likeCount = 0;
+  bool _showFullTitle = false;
 
-  String get _shareUrl => 'https://layn.su/play/${widget.video.id}/${widget.video.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '-')}';
+  String get _shareUrl =>
+      'https://layn.su/play/${widget.video.id}/${widget.video.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '-')}';
 
   @override
   void initState() {
     super.initState();
     _likeCount = widget.video.views;
+    WakelockPlus.enable();
     _initPlayer();
     _loadComments();
     _loadRelated();
+  }
+
+  @override
+  void dispose() {
+    WakelockPlus.disable();
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    _chewieCtrl?.dispose();
+    _videoCtrl?.dispose();
+    _commentCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _initPlayer() async {
@@ -53,11 +69,26 @@ class _VideoScreenState extends State<VideoScreen> {
         videoPlayerController: _videoCtrl!,
         autoPlay: true,
         showControls: true,
+        allowFullScreen: false,
+        allowMuting: true,
         aspectRatio: _videoCtrl!.value.aspectRatio,
       );
       setState(() => _ready = true);
     } catch (e) {
       debugPrint('Video player error: $e');
+    }
+  }
+
+  void _toggleFullscreen() {
+    if (_videoCtrl == null) return;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape) {
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
     }
   }
 
@@ -116,42 +147,6 @@ class _VideoScreenState extends State<VideoScreen> {
     try { await ApiService.instance.subscribe(widget.video.user?.id ?? 0); } catch (_) {}
   }
 
-  void _showDescription() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.3,
-        expand: false,
-        builder: (_, scroll) => ListView(
-          controller: scroll,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text(widget.video.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text('${_formatViews(widget.video.views)} • ${_timeAgo(widget.video.createdAt)}',
-                style: TextStyle(color: Colors.grey[500], fontSize: 13)),
-            const Divider(color: Colors.white10, height: 24),
-            Text(widget.video.description.isNotEmpty ? widget.video.description : 'Нет описания',
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white70),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showLoginPrompt() {
     showModalBottomSheet(context: context, backgroundColor: const Color(0xFF1E1E1E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
@@ -175,179 +170,223 @@ class _VideoScreenState extends State<VideoScreen> {
   }
 
   @override
-  void dispose() {
-    _chewieCtrl?.dispose();
-    _videoCtrl?.dispose();
-    _commentCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(children: [
-          // Video player (no AppBar - YouTube style)
-          if (_ready && _chewieCtrl != null)
-            AspectRatio(aspectRatio: _videoCtrl!.value.aspectRatio, child: Chewie(controller: _chewieCtrl!))
-          else
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(children: [
-                if (widget.video.thumbnailUrl.isNotEmpty)
-                  Image.network(widget.video.thumbnailUrl, fit: BoxFit.cover, width: double.infinity),
-                const Center(child: CircularProgressIndicator(color: Colors.white)),
-              ]),
+        child: isLandscape
+            ? _buildLandscape()
+            : _buildPortrait(),
+      ),
+    );
+  }
+
+  Widget _buildLandscape() {
+    // Полноэкранный режим — видео на весь экран
+    return Stack(children: [
+      if (_ready && _chewieCtrl != null)
+        Center(child: Chewie(controller: _chewieCtrl!))
+      else
+        const Center(child: CircularProgressIndicator(color: Colors.white)),
+      // Кнопка назад и fullscreen
+      Positioned(
+        top: 8, left: 8,
+        child: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+          },
+        ),
+      ),
+      Positioned(
+        top: 8, right: 8,
+        child: IconButton(
+          icon: const Icon(Icons.fullscreen_exit, color: Colors.white),
+          onPressed: () {
+            SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+          },
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildPortrait() {
+    return Column(children: [
+      // Video player
+      if (_ready && _chewieCtrl != null)
+        AspectRatio(aspectRatio: _videoCtrl!.value.aspectRatio, child: Chewie(controller: _chewieCtrl!))
+      else
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(children: [
+            if (widget.video.thumbnailUrl.isNotEmpty)
+              Image.network(widget.video.thumbnailUrl, fit: BoxFit.cover, width: double.infinity),
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
+          ]),
+        ),
+
+      Expanded(
+        child: ListView(padding: const EdgeInsets.symmetric(horizontal: 12), children: [
+          const SizedBox(height: 8),
+          // Title
+          Text(widget.video.title,
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+          // "Ещё" button for description
+          if (widget.video.description.isNotEmpty)
+            GestureDetector(
+              onTap: _showDescription,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Ещё', style: TextStyle(color: Colors.grey[500], fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
             ),
+          const SizedBox(height: 8),
 
-          Expanded(
-            child: ListView(padding: const EdgeInsets.symmetric(horizontal: 12), children: [
-              const SizedBox(height: 8),
-              // Title
-              Text(widget.video.title,
-                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
+          // Views + date
+          Text('${_formatViews(widget.video.views)} • ${_timeAgo(widget.video.createdAt)}',
+              style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+          const SizedBox(height: 10),
 
-              // Action buttons row (YouTube style)
-              SizedBox(
-                height: 40,
-                child: ListView(scrollDirection: Axis.horizontal, children: [
-                  _ytAction(Icons.thumb_up_outlined, _liked ? Icons.thumb_up : null,
-                      _formatCount(_likeCount), _onLike),
-                  const SizedBox(width: 4),
-                  _ytAction(Icons.thumb_down_outlined, _disliked ? Icons.thumb_down : null,
-                      '', _onDislike),
-                  const SizedBox(width: 4),
-                  _ytAction(Icons.reply_outlined, null, 'Поделиться',
-                      () => Share.share('${widget.video.title}\n$_shareUrl')),
-                  const SizedBox(width: 4),
-                  _ytAction(Icons.download_outlined, null, 'Скачать', () {}),
-                  const SizedBox(width: 4),
-                  _ytAction(Icons.bookmark_border_outlined, null, 'Сохранить', () {}),
-                ]),
+          // Action buttons (no download)
+          Row(children: [
+            _ytAction(Icons.thumb_up_outlined, _liked ? Icons.thumb_up : null,
+                _formatCount(_likeCount), _onLike),
+            const SizedBox(width: 12),
+            _ytAction(Icons.thumb_down_outlined, _disliked ? Icons.thumb_down : null,
+                '', _onDislike),
+            const SizedBox(width: 12),
+            _ytAction(Icons.arrow_forward, null, 'Поделиться',
+                () => Share.share('${widget.video.title}\n$_shareUrl')),
+            const SizedBox(width: 12),
+            _ytAction(Icons.fullscreen, null, 'Экран', _toggleFullscreen),
+          ]),
+          const Divider(color: Colors.white10, height: 16),
+
+          // Channel row
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              CircleAvatar(
+                radius: 18, backgroundColor: const Color(0xFF333),
+                backgroundImage: (widget.video.avatar ?? '').isNotEmpty ? NetworkImage(widget.video.avatar!) : null,
+                child: (widget.video.avatar == null || widget.video.avatar!.isEmpty)
+                    ? Text(widget.video.username[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 13))
+                    : null,
               ),
-              const Divider(color: Colors.white10, height: 16),
-
-              // Channel row
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(children: [
-                  CircleAvatar(
-                    radius: 18, backgroundColor: const Color(0xFF333),
-                    backgroundImage: (widget.video.avatar ?? '').isNotEmpty ? NetworkImage(widget.video.avatar!) : null,
-                    child: (widget.video.avatar == null || widget.video.avatar!.isEmpty)
-                        ? Text(widget.video.username[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 13))
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(widget.video.channelName ?? widget.video.username,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
-                    Text('подписчиков', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
-                  ])),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                        backgroundColor: _subscribed ? const Color(0xFF333) : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16)),
-                    onPressed: _onSubscribe,
-                    child: Text(_subscribed ? 'Подписан' : 'Подписаться',
-                        style: TextStyle(color: _subscribed ? Colors.grey : Colors.black, fontSize: 13, fontWeight: FontWeight.w600)),
-                  ),
-                ]),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(widget.video.channelName ?? widget.video.username,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                Text('подписчиков', style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+              ])),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: _subscribed ? const Color(0xFF333) : Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16)),
+                onPressed: _onSubscribe,
+                child: Text(_subscribed ? 'Подписан' : 'Подписаться',
+                    style: TextStyle(color: _subscribed ? Colors.grey : Colors.black, fontSize: 13, fontWeight: FontWeight.w600)),
               ),
-
-              // Description button (info icon)
-              GestureDetector(
-                onTap: _showDescription,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(12)),
-                  child: Row(children: [
-                    const Icon(Icons.info_outline, color: Colors.white70, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(
-                      widget.video.description.isNotEmpty
-                          ? widget.video.description.substring(0, widget.video.description.length.clamp(0, 80))
-                          : 'Нет описания',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                    )),
-                    const Icon(Icons.keyboard_arrow_down, color: Colors.white30),
-                  ]),
-                ),
-              ),
-
-              // Tabs
-              Container(
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
-                child: Row(children: [
-                  _tabBtn('Похожие видео', 0),
-                  _tabBtn('Комментарии (${_comments.length})', 1),
-                ]),
-              ),
-              const SizedBox(height: 8),
-
-              // Tab content
-              if (_tab == 0)
-                ..._related.map((v) => VideoCard(
-                  video: v,
-                  onTap: () => Navigator.pushReplacement(context,
-                      MaterialPageRoute(builder: (_) => VideoScreen(video: v))),
-                ))
-              else ...[
-                // Comment input
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _commentCtrl,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText: 'Добавить комментарий...',
-                          hintStyle: TextStyle(color: Colors.grey[600], fontSize: 13),
-                          filled: true, fillColor: const Color(0xFF1A1A1A),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(icon: const Icon(Icons.send, color: Color(0xFF6C5CE7), size: 20), onPressed: _sendComment),
-                  ]),
-                ),
-                // Comments list
-                ..._comments.map((cm) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    CircleAvatar(
-                      radius: 12, backgroundColor: const Color(0xFF333),
-                      backgroundImage: (cm.user?.avatar ?? '').isNotEmpty ? CachedNetworkImageProvider(cm.user!.avatar!) : null,
-                      child: (cm.user?.avatar ?? '').isEmpty
-                          ? Text((cm.user?.username ?? '?')[0].toUpperCase(),
-                              style: const TextStyle(color: Colors.white, fontSize: 10))
-                          : null,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('@${cm.user?.username ?? 'user'}',
-                          style: TextStyle(color: Colors.grey[500], fontSize: 11, fontWeight: FontWeight.w500)),
-                      Text(cm.text, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                    ])),
-                  ]),
-                )),
-                if (_comments.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 32),
-                    child: Text('Нет комментариев', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-                  ),
-              ],
-              const SizedBox(height: 16),
             ]),
           ),
+
+          // Tabs
+          Container(
+            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
+            child: Row(children: [
+              _tabBtn('Похожие видео', 0),
+              _tabBtn('Комментарии (${_comments.length})', 1),
+            ]),
+          ),
+          const SizedBox(height: 8),
+
+          // Tab content
+          if (_tab == 0)
+            ..._related.map((v) => VideoCard(
+              video: v,
+              onTap: () => Navigator.pushReplacement(context,
+                  MaterialPageRoute(builder: (_) => VideoScreen(video: v))),
+            ))
+          else ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Добавить комментарий...',
+                      hintStyle: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      filled: true, fillColor: const Color(0xFF1A1A1A),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(icon: const Icon(Icons.send, color: Color(0xFF6C5CE7), size: 20), onPressed: _sendComment),
+              ]),
+            ),
+            ..._comments.map((cm) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                CircleAvatar(
+                  radius: 12, backgroundColor: const Color(0xFF333),
+                  backgroundImage: (cm.user?.avatar ?? '').isNotEmpty ? CachedNetworkImageProvider(cm.user!.avatar!) : null,
+                  child: (cm.user?.avatar ?? '').isEmpty
+                      ? Text((cm.user?.username ?? '?')[0].toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontSize: 10))
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('@${cm.user?.username ?? 'user'}',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 11, fontWeight: FontWeight.w500)),
+                  Text(cm.text, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                ])),
+              ]),
+            )),
+            if (_comments.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Text('Нет комментариев', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+              ),
+          ],
+          const SizedBox(height: 16),
         ]),
+      ),
+    ]);
+  }
+
+  void _showDescription() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5, maxChildSize: 0.85, minChildSize: 0.3,
+        expand: false,
+        builder: (_, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 20),
+            Text(widget.video.title,
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text('${_formatViews(widget.video.views)} • ${_timeAgo(widget.video.createdAt)}',
+                style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+            const Divider(color: Colors.white10, height: 24),
+            Text(widget.video.description.isNotEmpty ? widget.video.description : 'Нет описания',
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          ],
+        ),
       ),
     );
   }

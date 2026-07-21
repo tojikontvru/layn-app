@@ -33,10 +33,13 @@ class ApiService {
     final r = await http.post(_uri(ep),
         headers: {..._h, 'Content-Type': 'application/json'},
         body: body != null ? jsonEncode(body) : null);
+    final d = jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode >= 200 && r.statusCode < 300) {
-      return jsonDecode(r.body) as Map<String, dynamic>;
+      return d;
     }
-    throw HttpException('HTTP ${r.statusCode}');
+    // Парсим ошибку сервера (422 и т.д.)
+    final msg = d['message'] ?? d['error'] ?? 'HTTP ${r.statusCode}';
+    throw Exception(msg);
   }
 
   // === Home ===

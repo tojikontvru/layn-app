@@ -9,6 +9,9 @@ class VideoCard extends StatelessWidget {
 
   const VideoCard({super.key, required this.video, required this.onTap});
 
+  String get _shareUrl =>
+      'https://layn.su/play/${video.id}/${video.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '-')}';
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -95,20 +98,17 @@ class VideoCard extends StatelessWidget {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(
-          leading: const Icon(Icons.share, color: Colors.white),
+          leading: const Icon(Icons.arrow_forward, color: Colors.white),
           title: const Text('Поделиться', style: TextStyle(color: Colors.white)),
           onTap: () {
             Navigator.pop(context);
-            Share.share('${video.title}\nhttps://layn.su/video/${video.id}');
+            Share.share('${video.title}\n$_shareUrl');
           },
         ),
-        const ListTile(
-          leading: Icon(Icons.download, color: Colors.white),
-          title: Text('Скачать', style: TextStyle(color: Colors.white)),
-        ),
-        const ListTile(
-          leading: Icon(Icons.flag_outlined, color: Colors.white),
-          title: Text('Пожаловаться', style: TextStyle(color: Colors.white)),
+        ListTile(
+          leading: const Icon(Icons.flag_outlined, color: Colors.white),
+          title: const Text('Пожаловаться', style: TextStyle(color: Colors.white)),
+          onTap: () => Navigator.pop(context),
         ),
       ])),
     );
