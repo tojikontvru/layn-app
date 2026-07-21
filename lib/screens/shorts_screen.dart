@@ -78,7 +78,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
     
     final short = _shorts[index];
     try {
-      final url = normalizeUrl(short.videoUrl);
+      final url = abs(short.videoUrl);
       _currentVpc = VideoPlayerController.networkUrl(Uri.parse(url));
       await _currentVpc!.initialize();
       if (!mounted) return;

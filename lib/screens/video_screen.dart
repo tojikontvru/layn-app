@@ -46,7 +46,7 @@ class _VideoScreenState extends State<VideoScreen> {
 
   Future<void> _initVideo() async {
     try {
-      final url = normalizeUrl(widget.video.videoUrl);
+      final url = abs(widget.video.videoUrl);
       _vpc = VideoPlayerController.networkUrl(Uri.parse(url));
       await _vpc.initialize();
       if (_disposed) return;
@@ -165,7 +165,7 @@ class _VideoScreenState extends State<VideoScreen> {
       return;
     }
     try {
-      await api.subscribe(widget.video.id);
+      await api.subscribe(widget.video.userId ?? widget.video.id);
       setState(() => _subscribed = !_subscribed);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

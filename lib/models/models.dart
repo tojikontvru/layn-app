@@ -41,6 +41,7 @@ String timeAgo(String? dateStr) {
 
 class Video {
   final int id;
+  final int? userId;
   final String title;
   final String description;
   final String thumbnailUrl;
@@ -58,6 +59,7 @@ class Video {
 
   Video({
     required this.id,
+    this.userId,
     required this.title,
     this.description = '',
     required this.thumbnailUrl,
@@ -87,6 +89,7 @@ class Video {
 
   factory Video.fromJson(Map<String, dynamic> j) => Video(
         id: j['id'] ?? 0,
+        userId: j['user']?['id'],
         title: j['title'] ?? '',
         description: j['description'] ?? '',
         thumbnailUrl: j['thumb'] ?? j['thumbnail_url'] ?? '',

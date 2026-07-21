@@ -7,7 +7,6 @@ import '../models/models.dart';
 
 class ApiService {
   static final instance = ApiService._();
-  ApiService();
   ApiService._();
 
   String? _token;

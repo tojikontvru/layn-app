@@ -31,7 +31,7 @@ class LaynApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final api = ApiService();
+    final api = ApiService.instance;
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
