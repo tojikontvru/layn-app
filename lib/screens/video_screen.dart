@@ -122,6 +122,29 @@ class _VideoScreenState extends State<VideoScreen> {
     return n.toString();
   }
 
+  String _formatViews(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M просмотров';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K просмотров';
+    return '$n просмотров';
+  }
+
+  String _formatDate(String dateStr) {
+    if (dateStr.isEmpty) return '';
+    try {
+      final date = DateTime.parse(dateStr);
+      final now = DateTime.now();
+      final diff = now.difference(date);
+      if (diff.inDays > 365) return '${(diff.inDays / 365).floor()} г. назад';
+      if (diff.inDays > 30) return '${(diff.inDays / 30).floor()} мес. назад';
+      if (diff.inDays > 0) return '${diff.inDays} дн. назад';
+      if (diff.inHours > 0) return '${diff.inHours} ч. назад';
+      if (diff.inMinutes > 0) return '${diff.inMinutes} мин. назад';
+      return 'Только что';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
   Future<void> _onLike() async {
     final api = Provider.of<ApiService>(context, listen: false);
     final auth = Provider.of<AuthProvider>(context, listen: false);
@@ -181,7 +204,6 @@ class _VideoScreenState extends State<VideoScreen> {
       );
       return;
     }
-    // Don't subscribe to yourself
     if (widget.video.userId != null && widget.video.userId == auth.userId) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Нельзя подписаться на свой канал')),
@@ -218,152 +240,135 @@ class _VideoScreenState extends State<VideoScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
-          // Safe area top padding
-          SizedBox(height: MediaQuery.of(context).padding.top),
-          // Back button row
-          Container(
-            color: Colors.black,
-            child: Row(
+          // Video player — NO header above it, just SafeArea padding
+          SafeArea(
+            bottom: false,
+            child: Column(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const Spacer(),
+                if (_loading)
+                  const AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                  )
+                else if (_videoError != null)
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Container(
+                      color: Colors.black,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                            const SizedBox(height: 8),
+                            Text(_videoError!,
+                                style: const TextStyle(color: Colors.white),
+                                textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _loading = true;
+                                  _videoError = null;
+                                });
+                                _initVideo();
+                              },
+                              child: const Text('Повторить',
+                                  style: TextStyle(color: Color(0xFF3EA6FF))),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else if (_cc != null)
+                  AspectRatio(
+                    aspectRatio: _cc!.videoPlayerController.value.aspectRatio > 0
+                        ? _cc!.videoPlayerController.value.aspectRatio
+                        : 16 / 9,
+                    child: Chewie(controller: _cc!),
+                  )
+                else
+                  Container(
+                    height: 200,
+                    color: Colors.black,
+                    child: const Center(
+                      child: Text('Не удалось загрузить видео',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
               ],
             ),
           ),
-          // Video player
-          if (_loading)
-            const AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Center(child: CircularProgressIndicator(color: Colors.white)),
-            )
-          else if (_videoError != null)
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Container(
-                color: Colors.black,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                      const SizedBox(height: 8),
-                      Text(_videoError!,
-                          style: const TextStyle(color: Colors.white),
-                          textAlign: TextAlign.center),
-                      const SizedBox(height: 12),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _loading = true;
-                            _videoError = null;
-                          });
-                          _initVideo();
-                        },
-                        child: const Text('Повторить',
-                            style: TextStyle(color: Color(0xFF3EA6FF))),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else if (_cc != null)
-            AspectRatio(
-              aspectRatio: _cc!.videoPlayerController.value.aspectRatio > 0
-                  ? _cc!.videoPlayerController.value.aspectRatio
-                  : 16 / 9,
-              child: Chewie(controller: _cc!),
-            )
-          else
-            Container(
-              height: 200,
-              color: Colors.black,
-              child: const Center(
-                child: Text('Не удалось загрузить видео',
-                    style: TextStyle(color: Colors.white)),
-              ),
-            ),
 
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                // Title + Ещё button
+                // Title
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.video.title,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      GestureDetector(
-                        onTap: () => setState(
-                            () => _showDescription = !_showDescription),
-                        child: Row(
-                          children: [
-                            Text(
-                              '${_formatCount(_likeCount)} лайков · ${widget.video.channel}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.color,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                _showDescription ? 'Свернуть' : 'Ещё',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    widget.video.title,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
 
-                // Action buttons row
+                // Views + date + "Ещё" for description
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showDescription = !_showDescription),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_formatViews(widget.video.views)} · ${_formatDate(widget.video.createdAt)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _showDescription ? 'Свернуть' : 'Ещё',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Action buttons row — like count ONLY under like icon
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _ytAction(
-                          Icons.thumb_up_outlined,
-                          _liked ? Icons.thumb_up : null,
-                          _formatCount(_likeCount),
-                          _onLike),
+                        Icons.thumb_up_outlined,
+                        _liked ? Icons.thumb_up : null,
+                        _formatCount(_likeCount),
+                        _onLike,
+                      ),
                       _ytAction(
-                          Icons.thumb_down_outlined,
-                          _disliked ? Icons.thumb_down : null,
-                          '',
-                          _onDislike),
+                        Icons.thumb_down_outlined,
+                        _disliked ? Icons.thumb_down : null,
+                        '',
+                        _onDislike,
+                      ),
                       _ytAction(Icons.share, null, 'Поделиться',
                           () => Share.share(_shareUrl)),
                     ],
@@ -385,22 +390,18 @@ class _VideoScreenState extends State<VideoScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${_formatCount(_likeCount)} лайков · ${widget.video.channel}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.color,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         if (widget.video.description.isNotEmpty)
                           Text(
                             widget.video.description,
                             style: const TextStyle(fontSize: 13),
+                          )
+                        else
+                          Text(
+                            'Описание отсутствует',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
                           ),
                       ],
                     ),
@@ -416,17 +417,14 @@ class _VideoScreenState extends State<VideoScreen> {
                         radius: 18,
                         backgroundImage: widget.video.avatar != null &&
                                 widget.video.avatar!.isNotEmpty
-                            ? CachedNetworkImageProvider(
-                                abs(widget.video.avatar!))
+                            ? CachedNetworkImageProvider(abs(widget.video.avatar!))
                             : null,
-                        child: widget.video.avatar == null ||
-                                widget.video.avatar!.isEmpty
+                        child: widget.video.avatar == null || widget.video.avatar!.isEmpty
                             ? Text(
                                 widget.video.channel.isNotEmpty
                                     ? widget.video.channel[0].toUpperCase()
                                     : '?',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
+                                style: const TextStyle(fontWeight: FontWeight.w600),
                               )
                             : null,
                       ),
@@ -437,145 +435,105 @@ class _VideoScreenState extends State<VideoScreen> {
                           children: [
                             Text(
                               widget.video.channel,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 14),
-                            ),
-                            Text(
-                              widget.video.username,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.color,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                             ),
                           ],
                         ),
                       ),
-                      // Subscribe button — hide if it's my video
                       if (!isMyVideo)
                         TextButton(
                           onPressed: _onSubscribe,
                           style: TextButton.styleFrom(
                             backgroundColor: _subscribed
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerHighest
+                                ? Theme.of(context).colorScheme.surfaceContainerHighest
                                 : Theme.of(context).colorScheme.primary,
                             foregroundColor: _subscribed
                                 ? Theme.of(context).textTheme.bodyLarge?.color
                                 : Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                           ),
                           child: Text(
                             _subscribed ? 'Подписан' : 'Подписаться',
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                           ),
                         ),
                     ],
                   ),
                 ),
 
+                const SizedBox(height: 8),
+
                 // Tabs: Похожие / Комментарии
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () =>
-                              setState(() => _selectedTab = 0),
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: _selectedTab == 0
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primary
-                                      : Colors.transparent,
-                                  width: 2,
-                                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedTab = 0),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: _selectedTab == 0
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.transparent,
+                                width: 2,
                               ),
                             ),
-                            child: Center(
-                              child: Text(
-                                'Похожие',
-                                style: TextStyle(
-                                  fontWeight: _selectedTab == 0
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                  color: _selectedTab == 0
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primary
-                                      : Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color,
-                                ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Похожие',
+                              style: TextStyle(
+                                fontWeight: _selectedTab == 0 ? FontWeight.w600 : FontWeight.normal,
+                                color: _selectedTab == 0
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).textTheme.bodySmall?.color,
                               ),
                             ),
                           ),
                         ),
                       ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() => _selectedTab = 1);
-                            _loadComments();
-                          },
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: _selectedTab == 1
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primary
-                                      : Colors.transparent,
-                                  width: 2,
-                                ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _selectedTab = 1);
+                          _loadComments();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: _selectedTab == 1
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.transparent,
+                                width: 2,
                               ),
                             ),
-                            child: Center(
-                              child: Text(
-                                'Комментарии',
-                                style: TextStyle(
-                                  fontWeight: _selectedTab == 1
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                  color: _selectedTab == 1
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primary
-                                      : Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color,
-                                ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Комментарии',
+                              style: TextStyle(
+                                fontWeight: _selectedTab == 1 ? FontWeight.w600 : FontWeight.normal,
+                                color: _selectedTab == 1
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).textTheme.bodySmall?.color,
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
 
                 // Tab content
                 if (_selectedTab == 0) ...[
-                  if (widget.related != null &&
-                      widget.related!.isNotEmpty)
+                  if (widget.related != null && widget.related!.isNotEmpty)
                     ...widget.related!
                         .where((v) => v.id != widget.video.id)
                         .map((v) => VideoCard(
@@ -584,9 +542,7 @@ class _VideoScreenState extends State<VideoScreen> {
                                 Navigator.pushReplacement(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => VideoScreen(
-                                        video: v,
-                                        related: widget.related),
+                                    builder: (_) => VideoScreen(video: v, related: widget.related),
                                   ),
                                 );
                               },
@@ -625,9 +581,7 @@ class _VideoScreenState extends State<VideoScreen> {
           Icon(
             isActive ? activeIcon : icon,
             size: 22,
-            color: isActive
-                ? Theme.of(context).colorScheme.primary
-                : null,
+            color: isActive ? Theme.of(context).colorScheme.primary : null,
           ),
           const SizedBox(height: 2),
           Text(
@@ -651,12 +605,10 @@ class _VideoScreenState extends State<VideoScreen> {
         children: [
           CircleAvatar(
             radius: 14,
-            backgroundImage: c.user?.avatar != null &&
-                    c.user!.avatar!.isNotEmpty
+            backgroundImage: c.user?.avatar != null && c.user!.avatar!.isNotEmpty
                 ? CachedNetworkImageProvider(abs(c.user!.avatar!))
                 : null,
-            child: uname.isEmpty || c.user?.avatar == null ||
-                    c.user!.avatar!.isEmpty
+            child: uname.isEmpty || c.user?.avatar == null || c.user!.avatar!.isEmpty
                 ? Text(
                     uname.isNotEmpty ? uname[0].toUpperCase() : '?',
                     style: const TextStyle(fontSize: 12),
@@ -670,8 +622,7 @@ class _VideoScreenState extends State<VideoScreen> {
               children: [
                 Text(
                   uname,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
                 Text(c.text, style: const TextStyle(fontSize: 13)),
@@ -689,15 +640,12 @@ class _VideoScreenState extends State<VideoScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.2),
-          ),
+          top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.2)),
         ),
       ),
       child: Row(
         children: [
-          const CircleAvatar(
-              radius: 14, child: Icon(Icons.person, size: 16)),
+          const CircleAvatar(radius: 14, child: Icon(Icons.person, size: 16)),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
@@ -710,27 +658,21 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 8),
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
             ),
           ),
           IconButton(
             icon: Icon(Icons.send,
-                size: 20,
-                color: Theme.of(context).colorScheme.primary),
+                size: 20, color: Theme.of(context).colorScheme.primary),
             onPressed: () async {
               final text = ctrl.text.trim();
               if (text.isEmpty) return;
-              final api =
-                  Provider.of<ApiService>(context, listen: false);
-              final auth =
-                  Provider.of<AuthProvider>(context, listen: false);
+              final api = Provider.of<ApiService>(context, listen: false);
+              final auth = Provider.of<AuthProvider>(context, listen: false);
               if (!auth.isAuth) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text(
-                          'Войдите, чтобы оставить комментарий')),
+                  const SnackBar(content: Text('Войдите, чтобы оставить комментарий')),
                 );
                 return;
               }
