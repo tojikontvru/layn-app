@@ -436,15 +436,14 @@ class _HistoryPageState extends State<_HistoryPage> {
       _error = null;
     });
     try {
-      final api =
-          Provider.of<ApiService>(context, listen: false);
+      final api = Provider.of<ApiService>(context, listen: false);
       _videos = await api.history();
       if (mounted) setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Не удалось загрузить историю';
+          _error = 'Раздел временно недоступен';
         });
       }
     }
@@ -453,7 +452,9 @@ class _HistoryPageState extends State<_HistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('История просмотров')),
+      appBar: AppBar(
+        title: const Text('История просмотров'),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -544,15 +545,14 @@ class _LikedPageState extends State<_LikedPage> {
       _error = null;
     });
     try {
-      final api =
-          Provider.of<ApiService>(context, listen: false);
+      final api = Provider.of<ApiService>(context, listen: false);
       _videos = await api.likedVideos();
       if (mounted) setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Не удалось загрузить';
+          _error = 'Раздел временно недоступен';
         });
       }
     }
