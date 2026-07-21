@@ -228,7 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return VideoCard(
             video: _videos[i],
             onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i]))),
+                MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i], related: _videos))),
           );
         },
       ),

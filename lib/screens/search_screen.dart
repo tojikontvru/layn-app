@@ -78,7 +78,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         itemBuilder: (_, i) => VideoCard(
                           video: _results[i],
                           onTap: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => VideoScreen(video: _results[i]))),
+                              MaterialPageRoute(builder: (_) => VideoScreen(video: _results[i], related: _results))),
                         ),
                       ),
       ),
