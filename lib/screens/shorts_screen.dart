@@ -18,7 +18,7 @@ class ShortsScreen extends StatefulWidget {
   State<ShortsScreen> createState() => _ShortsScreenState();
 }
 
-class _ShortsScreenState extends State<ShortsScreen> {
+class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver {
   List<Short> _shorts = [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -57,6 +57,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WakelockPlus.enable();
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -227,6 +228,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _heartTimer?.cancel();
     _hidePlayTimer?.cancel();
     _progressTimer?.cancel();
@@ -234,6 +236,16 @@ class _ShortsScreenState extends State<ShortsScreen> {
     _pageController.dispose();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_vpc == null) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _vpc!.pause();
+    }
   }
 
   @override

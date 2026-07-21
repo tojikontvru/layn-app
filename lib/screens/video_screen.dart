@@ -21,7 +21,7 @@ class VideoScreen extends StatefulWidget {
   State<VideoScreen> createState() => _VideoScreenState();
 }
 
-class _VideoScreenState extends State<VideoScreen> {
+class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
   ChewieController? _cc;
   VideoPlayerController? _vpc;
   bool _loading = true;
@@ -40,6 +40,7 @@ class _VideoScreenState extends State<VideoScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _likeCount = widget.video.views;
     _shareUrl = widget.video.shareUrl;
     SystemChrome.setPreferredOrientations([
@@ -109,11 +110,22 @@ class _VideoScreenState extends State<VideoScreen> {
   @override
   void dispose() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     _cc?.dispose();
     _vpc?.dispose();
     WakelockPlus.disable();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_cc == null) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _cc!.pause();
+    }
   }
 
   String _formatCount(int n) {

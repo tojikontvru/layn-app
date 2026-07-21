@@ -155,7 +155,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCategories() {
     return Container(
       height: 48,
-      color: Colors.black,
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        border: Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
+      ),
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
