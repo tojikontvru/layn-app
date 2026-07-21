@@ -1,7 +1,7 @@
 name: layn_app
 description: "Layn — mobile app for layn.su"
 publish_to: 'none'
-version: 1.0.0+14
+version: 1.0.0+15
 
 environment:
   sdk: ^3.7.0
