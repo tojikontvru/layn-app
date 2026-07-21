@@ -164,4 +164,116 @@ class ApiService {
     debugPrint('SHORTS IDs total: ${ids.length}');
     return ids;
   }
+
+  // === Profile editing ===
+  Future<Map<String, dynamic>> updateProfile({
+    String? username,
+    String? email,
+    String? firstname,
+    String? lastname,
+    String? channelName,
+    String? description,
+    String? avatar,
+  }) async {
+    final body = <String, dynamic>{};
+    if (username != null) body['username'] = username;
+    if (email != null) body['email'] = email;
+    if (firstname != null) body['firstname'] = firstname;
+    if (lastname != null) body['lastname'] = lastname;
+    if (channelName != null) body['channel_name'] = channelName;
+    if (description != null) body['description'] = description;
+    if (avatar != null) body['avatar'] = avatar;
+    return post('/profile/update', body: body);
+  }
+
+  Future<Map<String, dynamic>> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) =>
+      post('/profile/password', body: {
+        'current_password': currentPassword,
+        'password': newPassword,
+      });
+
+  // === Subscriptions ===
+  Future<List<VideoUser>> subscriptions() async {
+    try {
+      final d = await get('/subscriptions');
+      final data = d['data'];
+      if (data is Map) {
+        final subs = data['subscriptions'] ?? data['channels'] ?? data['users'];
+        if (subs is List) {
+          return subs.map((e) => VideoUser.fromJson(e as Map<String, dynamic>)).toList();
+        }
+      }
+      if (data is List) {
+        return data.map((e) => VideoUser.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<Video>> subscriptionFeed({int page = 1}) async {
+    try {
+      final d = await get('/subscriptions/feed?page=$page');
+      final data = d['data'];
+      List list;
+      if (data is Map) {
+        list = data['videos'] ?? data['feed'] ?? [];
+      } else if (data is List) {
+        list = data;
+      } else {
+        return [];
+      }
+      return list
+          .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // === Watch history ===
+  Future<List<Video>> history({int page = 1}) async {
+    try {
+      final d = await get('/history?page=$page');
+      final data = d['data'];
+      List list;
+      if (data is Map) {
+        list = data['videos'] ?? data['history'] ?? [];
+      } else if (data is List) {
+        list = data;
+      } else {
+        return [];
+      }
+      return list
+          .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // === Liked videos ===
+  Future<List<Video>> likedVideos({int page = 1}) async {
+    try {
+      final d = await get('/likes?page=$page');
+      final data = d['data'];
+      List list;
+      if (data is Map) {
+        list = data['videos'] ?? data['likes'] ?? [];
+      } else if (data is List) {
+        list = data;
+      } else {
+        return [];
+      }
+      return list
+          .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
 }

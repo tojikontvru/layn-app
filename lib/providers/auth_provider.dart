@@ -7,6 +7,10 @@ class AuthProvider extends ChangeNotifier {
   final ApiService api;
   VideoUser? _user;
   bool _loading = false;
+  String? _email;
+  String? _firstName;
+  String? _lastName;
+  String? _description;
 
   AuthProvider(this.api);
 
@@ -15,6 +19,10 @@ class AuthProvider extends ChangeNotifier {
   bool get loggedIn => _user != null;
   bool get loading => _loading;
   int? get userId => _user?.id;
+  String? get email => _email;
+  String? get firstName => _firstName;
+  String? get lastName => _lastName;
+  String? get description => _description;
 
   Future<void> init() async {
     try {
@@ -22,20 +30,31 @@ class AuthProvider extends ChangeNotifier {
       final token = prefs.getString('token');
       if (token != null && token.isNotEmpty) {
         api.setToken(token);
-        final d = await api.me();
-        final u = d['data'];
-        if (u != null) {
-          _user = VideoUser(
-            username: u['username'],
-            channelName: u['channel_name'] ?? u['firstname'],
-            avatar: u['avatar'],
-          );
-          notifyListeners();
-        }
+        await _fetchUser();
       }
     } catch (_) {
       api.setToken(null);
     }
+  }
+
+  Future<void> _fetchUser() async {
+    try {
+      final d = await api.me();
+      final u = d['data'] ?? d;
+      if (u != null && u is Map) {
+        _user = VideoUser(
+          id: u['id'],
+          username: u['username'],
+          channelName: u['channel_name'] ?? u['firstname'],
+          avatar: abs(u['avatar'] ?? u['image'] ?? ''),
+        );
+        _email = u['email'];
+        _firstName = u['firstname'];
+        _lastName = u['lastname'];
+        _description = u['description'];
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   Future<void> login(String username, String password) async {
@@ -78,8 +97,31 @@ class AuthProvider extends ChangeNotifier {
         channelName: u['channel_name'] ?? u['firstname'],
         avatar: abs(u['avatar'] ?? u['image'] ?? ''),
       );
+      _email = u['email'];
+      _firstName = u['firstname'];
+      _lastName = u['lastname'];
+      _description = u['description'];
       notifyListeners();
     }
+  }
+
+  Future<void> updateProfile({
+    String? username,
+    String? email,
+    String? firstname,
+    String? lastname,
+    String? channelName,
+    String? description,
+  }) async {
+    await api.updateProfile(
+      username: username,
+      email: email,
+      firstname: firstname,
+      lastname: lastname,
+      channelName: channelName,
+      description: description,
+    );
+    await _fetchUser();
   }
 
   Future<void> logout() async {
@@ -87,6 +129,10 @@ class AuthProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     _user = null;
+    _email = null;
+    _firstName = null;
+    _lastName = null;
+    _description = null;
     notifyListeners();
   }
 }

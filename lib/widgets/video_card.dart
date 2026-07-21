@@ -1,118 +1,13 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/models.dart';
 
 class VideoCard extends StatelessWidget {
   final Video video;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
-  const VideoCard({super.key, required this.video, required this.onTap});
-
-  String get _shareUrl =>
-      'https://layn.su/play/${video.id}/${video.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '-')}';
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Stack(children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CachedNetworkImage(
-                  imageUrl: video.thumbnailUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  placeholder: (_, __) => Container(color: const Color(0xFF222)),
-                  errorWidget: (_, __, ___) => Container(
-                    color: const Color(0xFF222),
-                    child: const Icon(Icons.play_circle_outline, color: Colors.white24, size: 48),
-                  ),
-                ),
-              ),
-            ),
-            if (video.duration.isNotEmpty)
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(video.duration,
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-                ),
-              ),
-          ]),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: const Color(0xFF222),
-                backgroundImage: (video.avatar ?? '').isNotEmpty
-                    ? NetworkImage(video.avatar!)
-                    : null,
-                child: (video.avatar == null || video.avatar!.isEmpty)
-                    ? Text((video.username.isNotEmpty ? video.username[0] : 'L').toUpperCase(),
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold))
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(video.title,
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${video.channelName ?? video.username} • ${_formatViews(video.views)} • ${_timeAgo(video.createdAt)}',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                  ),
-                ]),
-              ),
-              IconButton(
-                icon: Icon(Icons.more_vert, color: Colors.grey[500], size: 20),
-                onPressed: () => _showMenu(context),
-              ),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  void _showMenu(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(
-          leading: const Icon(Icons.arrow_forward, color: Colors.white),
-          title: const Text('Поделиться', style: TextStyle(color: Colors.white)),
-          onTap: () {
-            Navigator.pop(context);
-            Share.share('${video.title}\n$_shareUrl');
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.flag_outlined, color: Colors.white),
-          title: const Text('Пожаловаться', style: TextStyle(color: Colors.white)),
-          onTap: () => Navigator.pop(context),
-        ),
-      ])),
-    );
-  }
+  const VideoCard({super.key, required this.video, this.onTap});
 
   String _formatViews(int views) {
     if (views >= 1000000) return '${(views / 1000000).toStringAsFixed(1)}M просмотров';
@@ -120,18 +15,140 @@ class VideoCard extends StatelessWidget {
     return '$views просмотров';
   }
 
-  String _timeAgo(String dateStr) {
+  String _formatDate(String dateStr) {
+    if (dateStr.isEmpty) return '';
     try {
       final date = DateTime.parse(dateStr);
-      final diff = DateTime.now().difference(date);
+      final now = DateTime.now();
+      final diff = now.difference(date);
       if (diff.inDays > 365) return '${(diff.inDays / 365).floor()} г. назад';
       if (diff.inDays > 30) return '${(diff.inDays / 30).floor()} мес. назад';
       if (diff.inDays > 0) return '${diff.inDays} дн. назад';
       if (diff.inHours > 0) return '${diff.inHours} ч. назад';
       if (diff.inMinutes > 0) return '${diff.inMinutes} мин. назад';
-      return 'только что';
+      return 'Только что';
     } catch (_) {
-      return '';
+      return dateStr;
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Thumbnail
+          Stack(
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: video.thumb.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: video.thumb,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        placeholder: (_, __) => Container(color: Colors.grey.shade800),
+                        errorWidget: (_, __, ___) => Container(
+                          color: Colors.grey.shade800,
+                          child: const Icon(Icons.error_outline, color: Colors.white54),
+                        ),
+                      )
+                    : Container(
+                        color: Colors.grey.shade800,
+                        child: const Icon(Icons.play_circle_outline, color: Colors.white54, size: 48),
+                      ),
+              ),
+              // Duration badge
+              if (video.duration.isNotEmpty)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      video.duration,
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          // Info row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar
+                CircleAvatar(
+                  radius: 16,
+                  backgroundImage: video.avatar != null && video.avatar!.isNotEmpty
+                      ? CachedNetworkImageProvider(video.avatar!)
+                      : null,
+                  child: video.avatar == null || video.avatar!.isEmpty
+                      ? Text(
+                          video.channel.isNotEmpty ? video.channel[0].toUpperCase() : '?',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                // Title + meta
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        video.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${video.channel} · ${_formatViews(video.views)} · ${_formatDate(video.createdAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 3-dot menu with share
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert, size: 20, color: Theme.of(context).textTheme.bodySmall?.color),
+                  onSelected: (v) {
+                    if (v == 'share') {
+                      Share.share(video.shareUrl);
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(
+                      value: 'share',
+                      child: Row(
+                        children: [
+                          Icon(Icons.share, size: 20),
+                          SizedBox(width: 12),
+                          Text('Поделиться'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

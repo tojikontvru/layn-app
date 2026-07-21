@@ -1,137 +1,370 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../screens/login_screen.dart';
-import '../screens/register_screen.dart';
+import '../providers/theme_provider.dart';
+import '../models/models.dart';
+import '../services/api_service.dart';
+import '../widgets/video_card.dart';
+import 'video_screen.dart';
+import 'login_screen.dart';
+import 'edit_profile_screen.dart';
+import 'about_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        title: const Text('Профиль', style: TextStyle(color: Colors.white)),
+class _ProfileScreenState extends State<ProfileScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context);
+    return auth.isAuth ? _buildLoggedin(auth) : _buildGuest();
+  }
+
+  // === GUEST VIEW ===
+  Widget _buildGuest() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.person_outline, size: 80, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 16),
+            const Text(
+              'Войдите в аккаунт',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Смотрите видео, ставьте лайки и подписывайтесь на каналы',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())),
+              icon: const Icon(Icons.login),
+              label: const Text('Войти'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+          ],
+        ),
       ),
-      body: auth.isAuth ? _buildProfile(context, auth) : _buildGuest(context),
     );
   }
 
-  Widget _buildProfile(BuildContext context, AuthProvider auth) {
+  // === LOGGED IN VIEW ===
+  Widget _buildLoggedin(AuthProvider auth) {
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.zero,
       children: [
-        const SizedBox(height: 20),
-        // Avatar
-        Center(
-          child: CircleAvatar(
-            radius: 48,
-            backgroundColor: const Color(0xFF333),
-            backgroundImage: (auth.user?.avatar ?? '').isNotEmpty
-                ? NetworkImage(auth.user!.avatar!)
-                : null,
-            child: (auth.user?.avatar == null || auth.user!.avatar!.isEmpty)
-                ? Text(
-                    (auth.user?.username ?? 'U')[0].toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
-                  )
-                : null,
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Username
-        Center(
-          child: Text(
-            auth.user?.username ?? '',
-            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ),
-        const SizedBox(height: 4),
-        // Channel name
-        if (auth.user?.channelName != null)
-          Center(
-            child: Text(
-              auth.user!.channelName!,
-              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+        // Header with avatar, name, stats
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                Theme.of(context).scaffoldBackgroundColor,
+              ],
             ),
           ),
-        const SizedBox(height: 32),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 36,
+                backgroundImage: auth.user?.avatar != null && auth.user!.avatar!.isNotEmpty
+                    ? NetworkImage(auth.user!.avatar!)
+                    : null,
+                child: auth.user?.avatar == null || auth.user!.avatar!.isEmpty
+                    ? Text(
+                        (auth.user?.username ?? '?')[0].toUpperCase(),
+                        style: const TextStyle(fontSize: 28),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                auth.user?.channelName ?? auth.user?.username ?? '',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '@${auth.user?.username ?? ''}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).textTheme.bodySmall?.color,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Subscribe count placeholder
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _statChip('0 подписчиков'),
+                  const SizedBox(width: 12),
+                  _statChip('0 видео'),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // Menu items
+        _menuSection([
+          _menuItem(Icons.edit_outlined, 'Редактировать профиль', () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
+          }),
+          _menuItem(Icons.subscriptions_outlined, 'Подписки', () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const _SubscriptionsPage()));
+          }),
+          _menuItem(Icons.history, 'История просмотров', () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const _HistoryPage()));
+          }),
+          _menuItem(Icons.thumb_up_outlined, 'Понравившиеся', () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const _LikedPage()));
+          }),
+        ]),
 
         // Settings
-        _menuItem(Icons.edit, 'Редактировать профиль', () {}),
-        _menuItem(Icons.subscriptions_outlined, 'Подписки', () {}),
-        _menuItem(Icons.history, 'История просмотров', () {}),
-        _menuItem(Icons.download, 'Загрузки', () {}),
-        _menuItem(Icons.dark_mode_outlined, 'Тёмная тема', () {}, trailing: Switch(
-          value: true,
-          onChanged: (_) {},
-          activeColor: const Color(0xFF6C5CE7),
-        )),
-        _menuItem(Icons.info_outline, 'О приложении', () {}),
+        _menuSection([
+          _menuItem(Icons.info_outline, 'О приложении', () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
+          }),
+        ]),
 
-        const SizedBox(height: 24),
         // Logout
-        SizedBox(
-          width: double.infinity,
+        Padding(
+          padding: const EdgeInsets.all(16),
           child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.red),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
             onPressed: () async {
-              await auth.logout();
-              if (context.mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Выход'),
+                  content: const Text('Выйти из аккаунта?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Выйти', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await context.read<AuthProvider>().logout();
+              }
             },
             icon: const Icon(Icons.logout, color: Colors.red),
-            label: const Text('Выйти', style: TextStyle(color: Colors.red, fontSize: 16)),
+            label: const Text('Выйти из аккаунта', style: TextStyle(color: Colors.red)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+              side: const BorderSide(color: Colors.red),
+            ),
           ),
         ),
+        const SizedBox(height: 80),
       ],
     );
   }
 
-  Widget _buildGuest(BuildContext context) {
-    return Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.person_outline, color: Colors.white24, size: 80),
-        const SizedBox(height: 24),
-        const Text('Войдите в аккаунт', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Text('Чтобы подписываться и комментировать', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
-        const SizedBox(height: 32),
-        SizedBox(
-          width: 200,
-          child: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7), padding: const EdgeInsets.symmetric(vertical: 14)),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen())),
-            child: const Text('Войти', style: TextStyle(fontSize: 16)),
-          ),
+  Widget _statChip(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).textTheme.bodySmall?.color,
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: 200,
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF6C5CE7)), padding: const EdgeInsets.symmetric(vertical: 14)),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterScreen())),
-            child: const Text('Регистрация', style: TextStyle(color: Color(0xFF6C5CE7), fontSize: 16)),
-          ),
-        ),
-      ]),
+      ),
     );
   }
 
-  Widget _menuItem(IconData icon, String label, VoidCallback onTap, {Widget? trailing}) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.white70),
-      title: Text(label, style: const TextStyle(color: Colors.white)),
-      trailing: trailing ?? const Icon(Icons.chevron_right, color: Colors.white30),
+  Widget _menuSection(List<Widget> items) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(children: items),
+    );
+  }
+
+  Widget _menuItem(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
       onTap: onTap,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 16),
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 15))),
+            Icon(Icons.chevron_right, size: 20, color: Theme.of(context).textTheme.bodySmall?.color),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// === SUBSCRIPTIONS PAGE ===
+class _SubscriptionsPage extends StatefulWidget {
+  const _SubscriptionsPage();
+
+  @override
+  State<_SubscriptionsPage> createState() => _SubscriptionsPageState();
+}
+
+class _SubscriptionsPageState extends State<_SubscriptionsPage> {
+  List<VideoUser> _subs = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final api = Provider.of<ApiService>(context, listen: false);
+    _subs = await api.subscriptions();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Подписки')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _subs.isEmpty
+              ? const Center(child: Text('Вы пока ни на кого не подписались'))
+              : ListView.builder(
+                  itemCount: _subs.length,
+                  itemBuilder: (ctx, i) {
+                    final s = _subs[i];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: s.avatarUrl != null && s.avatarUrl!.isNotEmpty
+                            ? NetworkImage(s.avatarUrl!)
+                            : null,
+                        child: s.avatarUrl == null || s.avatarUrl!.isEmpty
+                            ? Text((s.displayName ?? s.username ?? '?')[0].toUpperCase())
+                            : null,
+                      ),
+                      title: Text(s.displayName ?? s.username ?? ''),
+                      subtitle: Text('@${s.username ?? ''}'),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+// === HISTORY PAGE ===
+class _HistoryPage extends StatefulWidget {
+  const _HistoryPage();
+
+  @override
+  State<_HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<_HistoryPage> {
+  List<Video> _videos = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final api = Provider.of<ApiService>(context, listen: false);
+    _videos = await api.history();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('История просмотров')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _videos.isEmpty
+              ? const Center(child: Text('История пуста'))
+              : ListView.builder(
+                  itemCount: _videos.length,
+                  itemBuilder: (ctx, i) => VideoCard(
+                    video: _videos[i],
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i])),
+                    ),
+                  ),
+                ),
+    );
+  }
+}
+
+// === LIKED PAGE ===
+class _LikedPage extends StatefulWidget {
+  const _LikedPage();
+
+  @override
+  State<_LikedPage> createState() => _LikedPageState();
+}
+
+class _LikedPageState extends State<_LikedPage> {
+  List<Video> _videos = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final api = Provider.of<ApiService>(context, listen: false);
+    _videos = await api.likedVideos();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Понравившиеся')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _videos.isEmpty
+              ? const Center(child: Text('Нет понравившихся видео'))
+              : ListView.builder(
+                  itemCount: _videos.length,
+                  itemBuilder: (ctx, i) => VideoCard(
+                    video: _videos[i],
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i])),
+                    ),
+                  ),
+                ),
     );
   }
 }

@@ -54,6 +54,7 @@ class Video {
   final String? avatar;
   final int? commentsCount;
   final String? categorySlug;
+  final String? slug;
 
   Video({
     required this.id,
@@ -70,10 +71,15 @@ class Video {
     this.avatar,
     this.commentsCount,
     this.categorySlug,
+    this.slug,
   });
 
   String get thumb => abs(thumbnailUrl);
   String get channel => channelName ?? username;
+  String get shareUrl {
+    final s = slug ?? title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'-+'), '-').replaceAll(RegExp(r'^-|-$'), '');
+    return 'https://layn.su/play/$id/$s';
+  }
 
   VideoUser? get user => username.isNotEmpty
       ? VideoUser(username: username, channelName: channelName, avatar: avatar)
@@ -94,6 +100,7 @@ class Video {
         avatar: abs(j['user']?['avatar'] ?? j['avatar'] ?? ''),
         commentsCount: j['comments_count'],
         categorySlug: j['category']?['slug'] ?? j['category_slug'] ?? j['slug'],
+        slug: j['slug'],
       );
 }
 
@@ -147,6 +154,7 @@ class Short {
   final String username;
   final String avatar;
   final String channelName;
+  final String? slug;
 
   Short({
     required this.id,
@@ -157,7 +165,13 @@ class Short {
     this.username = '',
     this.avatar = '',
     this.channelName = '',
+    this.slug,
   });
+
+  String get shareUrl {
+    final s = slug ?? title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'-+'), '-').replaceAll(RegExp(r'^-|-$'), '');
+    return 'https://layn.su/play/$id/$s';
+  }
 
   static List<Short> fromResponse(Map<String, dynamic> resp) {
     final data = resp['data'];
@@ -179,6 +193,7 @@ class Short {
           username: user?['username'] ?? j['username'] ?? '',
           avatar: abs(user?['avatar'] ?? j['avatar'] ?? ''),
           channelName: user?['channel_name'] ?? j['channel_name'] ?? '',
+          slug: j['slug'],
         );
       }).toList();
     }

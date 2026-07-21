@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'services/api_service.dart';
 import 'providers/auth_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/shorts_screen.dart';
 import 'screens/search_screen.dart';
@@ -30,37 +31,58 @@ class LaynApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final api = ApiService();
     return MultiProvider(
       providers: [
-        Provider<ApiService>(create: (_) => ApiService.instance),
-        ChangeNotifierProvider<AuthProvider>(
-          create: (ctx) => AuthProvider(ctx.read<ApiService>())..init(),
-        ),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider(api)..init()),
+        Provider.value(value: api),
       ],
-      child: MaterialApp(
-        title: 'Layn',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: const Color(0xFF0E0E0E),
-          useMaterial3: true,
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => MaterialApp(
+          title: 'Layn',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeProvider.themeMode,
+          theme: ThemeData(
+            brightness: Brightness.light,
+            colorSchemeSeed: const Color(0xFF065FD4),
+            useMaterial3: true,
+            scaffoldBackgroundColor: Colors.white,
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+            ),
+          ),
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            colorSchemeSeed: const Color(0xFF3EA6FF),
+            useMaterial3: true,
+            scaffoldBackgroundColor: const Color(0xFF0F0F0F),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF0F0F0F),
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+          ),
+          home: const MainScreen(),
         ),
-        home: const MainShell(),
       ),
     );
   }
 }
 
-class MainShell extends StatefulWidget {
-  const MainShell({super.key});
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
   @override
-  State<MainShell> createState() => _MainShellState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainShellState extends State<MainShell> {
-  int _tab = 0;
+class _MainScreenState extends State<MainScreen> {
+  int _idx = 0;
 
-  static const _screens = [
+  final _screens = const [
     HomeScreen(),
     ShortsScreen(),
     SearchScreen(),
@@ -70,17 +92,17 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_tab],
+      body: _screens[_idx],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        backgroundColor: const Color(0xFF121212),
-        indicatorColor: const Color(0xFF6C5CE7),
+        selectedIndex: _idx,
+        onDestinationSelected: (i) => setState(() => _idx = i),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        indicatorColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'Главная'),
-          NavigationDestination(icon: Icon(Icons.flash_on), label: 'Shorts'),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Поиск'),
-          NavigationDestination(icon: Icon(Icons.person), label: 'Профиль'),
+          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
+          NavigationDestination(icon: Icon(Icons.play_circle_outline), selectedIcon: Icon(Icons.play_circle), label: 'Shorts'),
+          NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
         ],
       ),
     );
