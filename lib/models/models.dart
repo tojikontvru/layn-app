@@ -150,10 +150,13 @@ class Category {
 
 class Short {
   final int id;
+  final int? userId;
   final String title;
   final String videoUrl;
   final String thumbnailUrl;
   final int views;
+  final int likesCount;
+  final int commentsCount;
   final String username;
   final String avatar;
   final String channelName;
@@ -161,10 +164,13 @@ class Short {
 
   Short({
     required this.id,
+    this.userId,
     required this.title,
     required this.videoUrl,
     this.thumbnailUrl = '',
     this.views = 0,
+    this.likesCount = 0,
+    this.commentsCount = 0,
     this.username = '',
     this.avatar = '',
     this.channelName = '',
@@ -189,10 +195,13 @@ class Short {
         final user = j['user'];
         return Short(
           id: j['id'] ?? e.key + 1,
+          userId: user?['id'],
           title: j['title'] ?? '',
           videoUrl: abs(j['video_url'] ?? ''),
           thumbnailUrl: abs(j['thumb'] ?? j['thumbnail_url'] ?? ''),
           views: j['views'] ?? 0,
+          likesCount: j['likes_count'] ?? j['likes'] ?? 0,
+          commentsCount: j['comments_count'] ?? j['comments'] ?? 0,
           username: user?['username'] ?? j['username'] ?? '',
           avatar: abs(user?['avatar'] ?? j['avatar'] ?? ''),
           channelName: user?['channel_name'] ?? j['channel_name'] ?? '',

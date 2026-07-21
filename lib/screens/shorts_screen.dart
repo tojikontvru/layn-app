@@ -35,6 +35,9 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
   // Like
   final Map<int, bool> _likedMap = {};
+  
+  // Subscribe
+  final Map<int, bool> _subscribedMap = {};
 
   // Double tap
   bool _showHeart = false;
@@ -429,15 +432,36 @@ class _ShortsScreenState extends State<ShortsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(6),
+                              if (short.userId != null && short.userId != auth.userId)
+                                GestureDetector(
+                                  onTap: () async {
+                                    if (!auth.isAuth) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Войдите, чтобы подписаться')),
+                                      );
+                                      return;
+                                    }
+                                    final isSub = _subscribedMap[short.userId] ?? false;
+                                    try {
+                                      final api = Provider.of<ApiService>(context, listen: false);
+                                      await api.subscribe(short.userId!);
+                                      setState(() => _subscribedMap[short.userId!] = !isSub);
+                                    } catch (_) {}
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: (_subscribedMap[short.userId] ?? false)
+                                          ? Colors.white.withOpacity(0.25)
+                                          : Colors.red,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      (_subscribedMap[short.userId] ?? false) ? 'Подписка' : 'Подписаться',
+                                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
                                 ),
-                                child: const Text('Подписаться',
-                                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -471,6 +495,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                           _actionButton(
                             icon: isLiked ? Icons.favorite : Icons.favorite_border,
                             color: isLiked ? Colors.red : Colors.white,
+                            label: _formatCount(short.likesCount + (isLiked ? 1 : 0)),
                             onTap: () async {
                               final auth = Provider.of<AuthProvider>(context, listen: false);
                               if (!auth.isAuth) {
@@ -489,6 +514,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
                           const SizedBox(height: 20),
                           _actionButton(
                             icon: Icons.chat_bubble_outline, color: Colors.white,
+                            label: _formatCount(short.commentsCount),
                             onTap: () => _showCommentsSheet(short),
                           ),
                           const SizedBox(height: 20),
@@ -648,14 +674,28 @@ class _ShortsScreenState extends State<ShortsScreen> {
     required IconData icon,
     required Color color,
     required VoidCallback onTap,
+    String? label,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(icon, color: color, size: 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 28),
+          if (label != null && label.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+            ),
+        ],
       ),
     );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
+    return count.toString();
   }
 
   void _showCommentsSheet(Short short) {
