@@ -46,6 +46,7 @@ class Video {
   final String description;
   final String thumbnailUrl;
   final String videoUrl;
+  final String? hlsUrl;
   final String username;
   final int views;
   final String duration;
@@ -64,6 +65,7 @@ class Video {
     this.description = '',
     required this.thumbnailUrl,
     required this.videoUrl,
+    this.hlsUrl,
     required this.username,
     this.views = 0,
     this.duration = '',
@@ -94,6 +96,9 @@ class Video {
         description: j['description'] ?? '',
         thumbnailUrl: j['thumb'] ?? j['thumbnail_url'] ?? '',
         videoUrl: j['video_url'] ?? '',
+        hlsUrl: j['hls_playlist'] != null && j['hls_playlist'].toString().isNotEmpty
+            ? abs(j['hls_playlist'])
+            : null,
         username: j['user']?['username'] ?? j['username'] ?? '',
         views: j['views'] ?? 0,
         duration: j['duration'] ?? '',
@@ -161,6 +166,9 @@ class Short {
   final String avatar;
   final String channelName;
   final String? slug;
+  final String? redirectUrl;
+  final String? redirectType;
+  final String? redirectBtnTitle;
 
   Short({
     required this.id,
@@ -175,6 +183,9 @@ class Short {
     this.avatar = '',
     this.channelName = '',
     this.slug,
+    this.redirectUrl,
+    this.redirectType,
+    this.redirectBtnTitle,
   });
 
   String get shareUrl {
@@ -206,6 +217,12 @@ class Short {
           avatar: abs(user?['avatar'] ?? j['avatar'] ?? ''),
           channelName: user?['channel_name'] ?? j['channel_name'] ?? '',
           slug: j['slug'],
+          redirectUrl: j['redirect_url'] != null && j['redirect_url'].toString().isNotEmpty
+              ? j['redirect_url'].toString() : null,
+          redirectType: j['redirect_type'] != null && j['redirect_type'].toString().isNotEmpty
+              ? j['redirect_type'].toString() : null,
+          redirectBtnTitle: j['redirect_btn_title'] != null && j['redirect_btn_title'].toString().isNotEmpty
+              ? j['redirect_btn_title'].toString() : null,
         );
       }).toList();
     }
@@ -313,5 +330,50 @@ class Short {
 
     debugPrint('HTML parsed: ${shorts.length} shorts from HTML');
     return shorts;
+  }
+}
+
+/// Ad model for in-app advertisements
+class Ad {
+  final int id;
+  final String type; // 'feed', 'shorts', 'player'
+  final String title;
+  final String description;
+  final String? imageUrl;
+  final String? videoUrl;
+  final String targetUrl;
+  final int interval;
+  final int startAfter;
+  final int? showAtMinute;
+  final int skipAfterSeconds;
+
+  Ad({
+    required this.id,
+    required this.type,
+    required this.title,
+    this.description = '',
+    this.imageUrl,
+    this.videoUrl,
+    required this.targetUrl,
+    this.interval = 6,
+    this.startAfter = 0,
+    this.showAtMinute,
+    this.skipAfterSeconds = 5,
+  });
+
+  factory Ad.fromJson(Map<String, dynamic> j) {
+    return Ad(
+      id: j['id'] is int ? j['id'] : int.tryParse(j['id'].toString()) ?? 0,
+      type: j['type']?.toString() ?? 'feed',
+      title: j['title']?.toString() ?? '',
+      description: j['description']?.toString() ?? '',
+      imageUrl: j['image_url']?.toString(),
+      videoUrl: j['video_url']?.toString(),
+      targetUrl: j['target_url']?.toString() ?? '',
+      interval: j['interval'] is int ? j['interval'] : int.tryParse(j['interval'].toString()) ?? 6,
+      startAfter: j['start_after'] is int ? j['start_after'] : int.tryParse(j['start_after'].toString()) ?? 0,
+      showAtMinute: j['show_at_minute'] is int ? j['show_at_minute'] : (j['show_at_minute'] != null ? int.tryParse(j['show_at_minute'].toString()) : null),
+      skipAfterSeconds: j['skip_after_seconds'] is int ? j['skip_after_seconds'] : int.tryParse(j['skip_after_seconds'].toString()) ?? 5,
+    );
   }
 }

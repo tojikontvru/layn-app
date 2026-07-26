@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/video_card.dart';
+import '../widgets/ad_card.dart';
 import 'video_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _videos = <Video>[];
+  final _ads = <Ad>[];
   final _categories = <Category>[];
   final _scrollCtrl = ScrollController();
   bool _loading = true;
@@ -68,12 +70,19 @@ class _HomeScreenState extends State<HomeScreen> {
       final videosRaw = (d['data']?['videos'] as List? ?? []);
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .where((v) => !v.isShorts)
           .toList();
       
       final meta = d['data'] ?? {};
+      // Load feed ads
+      final allAds = await ApiService.instance.ads();
+      final feedAds = allAds.where((a) => a.type == 'feed').toList();
       setState(() {
         _videos.clear();
         _videos.addAll(list);
+        _ads
+          ..clear()
+          ..addAll(feedAds);
         _lastPage = meta['last_page'] ?? 1;
         _loading = false;
       });
@@ -91,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final videosRaw = (d['data']?['videos'] as List? ?? []);
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .where((v) => !v.isShorts)
           .toList();
       
       if (mounted) {
@@ -198,6 +208,42 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Total items in list: videos + interleaved ads + loading indicator
+  int get _totalItems {
+    return _videoCountWithAds + (_loadingMore ? 1 : 0);
+  }
+
+  /// Videos count + interleaved ads
+  int get _videoCountWithAds {
+    if (_ads.isEmpty) return _videos.length;
+    if (_videos.isEmpty) return 0;
+    final ad = _ads.first;
+    int adCount = 0;
+    for (int i = 1; i <= _videos.length; i++) {
+      if (i > ad.startAfter && (i - ad.startAfter) % ad.interval == 0) {
+        adCount++;
+      }
+    }
+    return _videos.length + adCount;
+  }
+
+  /// Return Video or Ad for the given flat list index
+  dynamic _itemAt(int flatIndex) {
+    if (_ads.isEmpty) return _videos[flatIndex];
+
+    final ad = _ads.first;
+    int videoIdx = 0;
+    for (int i = 0; i <= flatIndex; i++) {
+      int pos = i + 1;
+      bool isAd = pos > ad.startAfter && (pos - ad.startAfter) % ad.interval == 0;
+      if (i == flatIndex) {
+        return isAd ? ad : _videos[videoIdx];
+      }
+      if (!isAd) videoIdx++;
+    }
+    return _videos[flatIndex];
+  }
+
   Widget _buildBody() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)));
@@ -220,18 +266,23 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView.builder(
         controller: _scrollCtrl,
         padding: const EdgeInsets.only(top: 4, bottom: 16),
-        itemCount: _videos.length + (_loadingMore ? 1 : 0),
+        itemCount: _totalItems,
         itemBuilder: (_, i) {
-          if (i == _videos.length) {
+          if (i == _videoCountWithAds) {
             return const Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator(color: Color(0xFFE53935))),
             );
           }
+          final item = _itemAt(i);
+          if (item is Ad) {
+            return AdCard(ad: item);
+          }
+          final video = item as Video;
           return VideoCard(
-            video: _videos[i],
+            video: video,
             onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => VideoScreen(video: _videos[i], related: _videos))),
+                MaterialPageRoute(builder: (_) => VideoScreen(video: video, related: _videos))),
           );
         },
       ),

@@ -283,4 +283,18 @@ class ApiService {
       return [];
     }
   }
+
+  /// Fetch all active ads
+  Future<List<Ad>> ads() async {
+    try {
+      final d = await get('/ads');
+      final data = d['data'];
+      final list = data is Map ? (data['ads'] as List? ?? []) : [];
+      return list
+          .map((e) => Ad.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
 }

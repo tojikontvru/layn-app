@@ -6,10 +6,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'search_screen.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
+import 'video_screen.dart';
 
 class ShortsScreen extends StatefulWidget {
   const ShortsScreen({super.key});
@@ -276,10 +278,10 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.play_circle_outline, size: 64,
-                  color: Colors.white.withOpacity(0.5)),
+                  color: Colors.white.withValues(alpha: 0.5)),
               const SizedBox(height: 12),
               Text('Нет шортсов',
-                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16)),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 16)),
             ],
           ),
         ),
@@ -391,7 +393,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                               child: Container(
                                 width: 36, height: 36,
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.4),
+                                  color: Colors.black.withValues(alpha: 0.4),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(_isMuted ? Icons.volume_off : Icons.volume_up,
@@ -468,7 +470,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                                     decoration: BoxDecoration(
                                       color: (_subscribedMap[short.userId] ?? false)
-                                          ? Colors.white.withOpacity(0.25)
+                                          ? Colors.white.withValues(alpha: 0.25)
                                           : Colors.red,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
@@ -496,13 +498,89 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                             Text(
                               '${_formatViews(short.views)} просмотров',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.85), fontSize: 12,
+                                color: Colors.white.withValues(alpha: 0.85), fontSize: 12,
                                 shadows: const [Shadow(blurRadius: 3, color: Colors.black54)],
+                              ),
+                            ),
+                          // === REDIRECT BUTTON ===
+                          if (short.redirectUrl != null && short.redirectUrl!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: GestureDetector(
+                                onTap: () => _handleRedirect(short),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.open_in_new, size: 12, color: Colors.white.withValues(alpha: 0.85)),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        short.redirectBtnTitle ?? (short.redirectType == 'url' ? 'Перейти' : 'Смотреть полностью'),
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(alpha: 0.9),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          shadows: const [Shadow(blurRadius: 3, color: Colors.black54)],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                         ],
                       ),
                     ),
+                    // === Смотреть полностью — красивая кнопка внизу ===
+                    if (short.redirectUrl != null && short.redirectUrl!.isNotEmpty)
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: 20,
+                        child: GestureDetector(
+                          onTap: () => _handleRedirect(short),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.18),
+                                  Colors.white.withValues(alpha: 0.08),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.play_circle_fill, color: Colors.white, size: 22),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Смотреть полностью',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 14),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
 
                     // === RIGHT SIDE BUTTONS ===
                     Positioned(
@@ -579,7 +657,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                             child: Container(
                               width: 64, height: 64,
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.5), shape: BoxShape.circle,
+                                color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle,
                               ),
                               child: Icon(
                                 _isPlaying ? Icons.play_arrow : Icons.pause,
@@ -629,7 +707,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                     height: 3,
                     child: LinearProgressIndicator(
                       value: _progress.clamp(0.0, 1.0),
-                      backgroundColor: Colors.white.withOpacity(0.2),
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
                       valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
                     ),
                   ),
@@ -662,17 +740,17 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         ),
         if (!_isInitialized)
           Container(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withValues(alpha: 0.3),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(width: 36, height: 36,
                       child: CircularProgressIndicator(
-                          color: Colors.white.withOpacity(0.8), strokeWidth: 2)),
+                          color: Colors.white.withValues(alpha: 0.8), strokeWidth: 2)),
                   const SizedBox(height: 12),
                   Text('Загрузка...',
-                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
                 ],
               ),
             ),
@@ -789,5 +867,60 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         ),
       ),
     );
+  }
+
+  /// Handle redirect from Shorts button
+  void _handleRedirect(Short short) async {
+    final url = short.redirectUrl!;
+    final type = short.redirectType ?? '';
+
+    // 'url' → external link, 'internal' → video ID, anything else → try video then URL
+    if (type == 'url') {
+      // External URL — open in browser
+      final uri = Uri.tryParse(url);
+      if (uri != null && await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } else {
+      // 'internal' or default: treat as video — try to extract video ID
+      final videoId = _extractVideoId(url);
+      if (videoId != null && videoId > 0) {
+        try {
+          final response = await context.read<ApiService>().video(videoId);
+          final data = response['data'];
+          if (data != null && context.mounted) {
+            final video = Video.fromJson(data as Map<String, dynamic>);
+            Navigator.push(context,
+                MaterialPageRoute(builder: (_) => VideoScreen(video: video)));
+          }
+        } catch (_) {
+          // Fallback: open URL in browser
+          final uri = Uri.tryParse(url);
+          if (uri != null && await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        }
+      } else {
+        final uri = Uri.tryParse(url);
+        if (uri != null && await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      }
+    }
+  }
+
+  /// Extract video ID from various URL patterns
+  int? _extractVideoId(String url) {
+    // If the URL is purely a number, it's a video ID
+    final pureNum = int.tryParse(url);
+    if (pureNum != null) return pureNum;
+    // Extract from URL patterns
+    final match1 = RegExp(r'/play/(\d+)').firstMatch(url);
+    if (match1 != null) return int.tryParse(match1.group(1)!);
+    final match2 = RegExp(r'[?&]id=(\d+)').firstMatch(url);
+    if (match2 != null) return int.tryParse(match2.group(1)!);
+    final match3 = RegExp(r'/video/(\d+)').firstMatch(url);
+    if (match3 != null) return int.tryParse(match3.group(1)!);
+    return null;
   }
 }

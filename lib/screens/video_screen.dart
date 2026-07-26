@@ -21,7 +21,8 @@ class VideoScreen extends StatefulWidget {
   State<VideoScreen> createState() => _VideoScreenState();
 }
 
-class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
+class _VideoScreenState extends State<VideoScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   ChewieController? _cc;
   VideoPlayerController? _vpc;
   bool _loading = true;
@@ -37,10 +38,22 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
 
   late String _shareUrl;
 
+  late AnimationController _animCtrl;
+  late Animation<double> _likeAnim;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _likeAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.3, end: 0.9), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.0), weight: 40),
+    ]).animate(_animCtrl);
     _likeCount = widget.video.views;
     _shareUrl = widget.video.shareUrl;
     SystemChrome.setPreferredOrientations([
@@ -110,6 +123,7 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposed = true;
+    _animCtrl.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _cc?.dispose();
     _vpc?.dispose();
@@ -158,6 +172,7 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _onLike() async {
+    _animCtrl.forward(from: 0);
     final api = Provider.of<ApiService>(context, listen: false);
     final auth = Provider.of<AuthProvider>(context, listen: false);
     if (!auth.isAuth) {
@@ -363,26 +378,126 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
                   ),
                 ),
 
-                // Action buttons row — like count ONLY under like icon
+                // Combined row: [Avatar] [Name] [+] [Playlist] [♡ count] [Share]
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _ytAction(
-                        Icons.thumb_up_outlined,
-                        _liked ? Icons.thumb_up : null,
-                        _formatCount(_likeCount),
-                        _onLike,
+                      // Channel avatar
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundImage: widget.video.avatar != null &&
+                                widget.video.avatar!.isNotEmpty
+                            ? CachedNetworkImageProvider(abs(widget.video.avatar!))
+                            : null,
+                        child: widget.video.avatar == null || widget.video.avatar!.isEmpty
+                            ? Text(
+                                widget.video.channel.isNotEmpty
+                                    ? widget.video.channel[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                              )
+                            : null,
                       ),
-                      _ytAction(
-                        Icons.thumb_down_outlined,
-                        _disliked ? Icons.thumb_down : null,
-                        '',
-                        _onDislike,
+                      const SizedBox(width: 8),
+                      // Channel name
+                      Flexible(
+                        child: Text(
+                          widget.video.channel,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      _ytAction(Icons.share, null, 'Поделиться',
-                          () => Share.share(_shareUrl)),
+                      const SizedBox(width: 4),
+                      // Subscribe [+] button (circle)
+                      if (!isMyVideo)
+                        GestureDetector(
+                          onTap: _onSubscribe,
+                          child: Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: _subscribed
+                                  ? Theme.of(context).colorScheme.surfaceContainerHighest
+                                  : Theme.of(context).colorScheme.primary,
+                              shape: BoxShape.circle,
+                              border: _subscribed
+                                  ? Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.3))
+                                  : null,
+                            ),
+                            child: Icon(
+                              _subscribed ? Icons.check : Icons.add,
+                              size: 16,
+                              color: _subscribed
+                                  ? Theme.of(context).textTheme.bodyLarge?.color
+                                  : Colors.white,
+                            ),
+                          ),
+                        ),
+                      const Spacer(),
+                      const Spacer(),
+                      // Playlist — clean outlined icon
+                      GestureDetector(
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Плейлисты — скоро'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                        child: Icon(
+                          Icons.bookmark_border,
+                          size: 22,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      // Like ♡ — clean with count
+                      GestureDetector(
+                        onTap: _onLike,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedBuilder(
+                              animation: _animCtrl,
+                              builder: (context, child) {
+                                return Transform.scale(
+                                  scale: _likeAnim.value,
+                                  child: Icon(
+                                    _liked ? Icons.favorite : Icons.favorite_border,
+                                    size: 22,
+                                    color: _liked ? Colors.red : Theme.of(context).textTheme.bodySmall?.color,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _formatCount(_likeCount),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: _liked
+                                    ? Colors.red
+                                    : Theme.of(context).textTheme.bodySmall?.color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      // Share — clean outlined icon
+                      GestureDetector(
+                        onTap: () => Share.share(_shareUrl),
+                        child: Icon(
+                          Icons.ios_share,
+                          size: 22,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
                     ],
                   ),
                 ),
@@ -396,7 +511,7 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
                       color: Theme.of(context)
                           .colorScheme
                           .surfaceContainerHighest
-                          .withOpacity(0.5),
+                          .withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Column(
@@ -419,60 +534,6 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ],
-
-                // Channel row
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundImage: widget.video.avatar != null &&
-                                widget.video.avatar!.isNotEmpty
-                            ? CachedNetworkImageProvider(abs(widget.video.avatar!))
-                            : null,
-                        child: widget.video.avatar == null || widget.video.avatar!.isEmpty
-                            ? Text(
-                                widget.video.channel.isNotEmpty
-                                    ? widget.video.channel[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.video.channel,
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (!isMyVideo)
-                        TextButton(
-                          onPressed: _onSubscribe,
-                          style: TextButton.styleFrom(
-                            backgroundColor: _subscribed
-                                ? Theme.of(context).colorScheme.surfaceContainerHighest
-                                : Theme.of(context).colorScheme.primary,
-                            foregroundColor: _subscribed
-                                ? Theme.of(context).textTheme.bodyLarge?.color
-                                : Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          ),
-                          child: Text(
-                            _subscribed ? 'Подписан' : 'Подписаться',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
 
                 const SizedBox(height: 8),
 
@@ -652,7 +713,7 @@ class _VideoScreenState extends State<VideoScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.2)),
+          top: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
         ),
       ),
       child: Row(
