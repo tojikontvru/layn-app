@@ -237,7 +237,10 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       // Assign to field only after ownership is confirmed
       _vpc = myVpc;
 
-      if (!mounted) return;
+      if (!mounted) {
+        myVpc?.dispose();
+        return;
+      }
       myVpc!.setLooping(true);
       myVpc.setVolume(_isMuted ? 0 : 1);
       await myVpc.play();
@@ -251,11 +254,12 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       }
 
       _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-        if (myVpc != null && myVpc.value.isInitialized && mounted && !_seeking) {
-          final dur = myVpc.value.duration.inMilliseconds;
+        final v = myVpc;
+        if (v != null && v.value.isInitialized && mounted && !_seeking) {
+          final dur = v.value.duration.inMilliseconds;
           if (dur > 0) {
             setState(() {
-              _progress = myVpc.value.position.inMilliseconds / dur;
+              _progress = v.value.position.inMilliseconds / dur;
             });
           }
         }
@@ -436,6 +440,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
               itemBuilder: (context, index) {
                 final short = _shorts[index];
                 final isCurrent = index == _currentIndex;
+                final isLiked = _likedMap[short.id] ?? false;
 
                 return Stack(
                   fit: StackFit.expand,
