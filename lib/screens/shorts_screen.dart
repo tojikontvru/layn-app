@@ -143,18 +143,25 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     if (nextIndex < 0 || nextIndex >= _shorts.length) return;
     if (_prefetchedForIndex == nextIndex && _prefetchedVpc != null) return;
 
+    // Mark this prefetch request immediately so concurrent calls can self-cancel
+    _prefetchedForIndex = nextIndex;
+
     final url = abs(_shorts[nextIndex].videoUrl);
-    if (url.isEmpty) return;
+    if (url.isEmpty) {
+      _prefetchedForIndex = null;
+      return;
+    }
 
     try {
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await controller.initialize().timeout(const Duration(seconds: 10));
       if (!mounted) {
         controller.dispose();
+        _prefetchedForIndex = null;
         return;
       }
 
-      // Only keep if still the same target
+      // Only keep if this prefetch is still the requested one
       if (_prefetchedForIndex == nextIndex) {
         _prefetchedVpc?.dispose();
         _prefetchedVpc = controller;
@@ -163,6 +170,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       }
     } catch (_) {
       // Silently ignore prefetch failures
+      _prefetchedForIndex = null;
     }
   }
 
@@ -175,9 +183,17 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     _progressTimer?.cancel();
     _vpc?.dispose();
 
+    // Dispose stale prefetch if it is for a different index
+    if (_prefetchedForIndex != index && _prefetchedVpc != null) {
+      _prefetchedVpc?.dispose();
+      _prefetchedVpc = null;
+      _prefetchedForIndex = null;
+    }
+
     final url = abs(_shorts[index].videoUrl);
     if (url.isEmpty) {
       if (currentRequestId != _requestId) return;
+      if (!mounted) return;
       setState(() {
         _isInitialized = false;
         _isPlaying = false;
@@ -197,29 +213,49 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     });
 
     try {
-      _vpc = VideoPlayerController.networkUrl(Uri.parse(url));
-      await _vpc!.initialize().timeout(const Duration(seconds: 15));
+      // Keep a local reference so race-safety cleanup always targets the right controller
+      VideoPlayerController? myVpc;
 
-      // Race condition check: has a newer play request been made?
+      // Reuse prefetched controller if available for this index
+      if (_prefetchedForIndex == index && _prefetchedVpc != null) {
+        myVpc = _prefetchedVpc;
+        _prefetchedVpc = null;
+        _prefetchedForIndex = null;
+      } else {
+        final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+        await controller.initialize().timeout(const Duration(seconds: 15));
+
+        // Race condition check: has a newer play request been made?
+        if (currentRequestId != _requestId) {
+          controller.dispose();
+          return;
+        }
+
+        myVpc = controller;
+      }
+
+      // Assign to field only after ownership is confirmed
+      _vpc = myVpc;
+
+      if (!mounted) return;
+      myVpc!.setLooping(true);
+      myVpc.setVolume(_isMuted ? 0 : 1);
+      await myVpc.play();
+
+      // Final race check after play — if a newer request arrived, do not keep state
       if (currentRequestId != _requestId) {
-        _vpc!.dispose();
+        _progressTimer?.cancel();
+        myVpc.dispose();
+        if (_vpc == myVpc) _vpc = null;
         return;
       }
 
-      // Cancel progress timer from any previous request
-      _progressTimer?.cancel();
-
-      if (!mounted) return;
-      _vpc!.setLooping(true);
-      _vpc!.setVolume(_isMuted ? 0 : 1);
-      await _vpc!.play();
-
       _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-        if (_vpc != null && _vpc!.value.isInitialized && mounted && !_seeking) {
-          final dur = _vpc!.value.duration.inMilliseconds;
+        if (myVpc != null && myVpc.value.isInitialized && mounted && !_seeking) {
+          final dur = myVpc.value.duration.inMilliseconds;
           if (dur > 0) {
             setState(() {
-              _progress = _vpc!.value.position.inMilliseconds / dur;
+              _progress = myVpc.value.position.inMilliseconds / dur;
             });
           }
         }
@@ -271,7 +307,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
 
   void _handleTap(TapDownDetails details) {
     final now = DateTime.now();
-    if (_lastTap != null && now.difference(_lastTap!).inMilliseconds < 300) {
+    if (_lastTap != null && now.difference(_lastTap!).inMilliseconds < 280) {
       // Double tap detected
       _lastTap = null;
       _singleTapTimer?.cancel();
@@ -295,7 +331,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       // Possible single tap — wait to see if second tap comes
       _lastTap = now;
       _singleTapTimer?.cancel();
-      _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
+      _singleTapTimer = Timer(const Duration(milliseconds: 280), () {
         if (mounted) {
           _togglePlayPause();
         }
