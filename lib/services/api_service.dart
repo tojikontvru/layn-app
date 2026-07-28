@@ -14,6 +14,9 @@ class ApiService {
 
   void setToken(String? t) => _token = t;
 
+  // ─── Simple in-memory cache ───────────────────────────────
+  final _cache = <String, _CachedEntry>{};
+
   Map<String, String> get _h => {
         'Accept': 'application/json',
         if (_token != null) 'Authorization': 'Bearer $_token',
@@ -21,12 +24,27 @@ class ApiService {
 
   Uri _uri(String ep) => Uri.parse('$baseUrl$ep');
 
-  Future<Map<String, dynamic>> get(String ep) async {
+  Future<Map<String, dynamic>> get(String ep, {bool cache = true}) async {
+    if (cache) {
+      final entry = _cache[ep];
+      if (entry != null && !entry.isExpired) return entry.data;
+    }
+
     final r = await http.get(_uri(ep), headers: _h);
     if (r.statusCode >= 200 && r.statusCode < 300) {
-      return jsonDecode(r.body) as Map<String, dynamic>;
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      if (cache) _cache[ep] = _CachedEntry(data);
+      return data;
     }
     throw HttpException('HTTP ${r.statusCode}');
+  }
+
+  void invalidateCache([String? prefix]) {
+    if (prefix == null) {
+      _cache.clear();
+    } else {
+      _cache.removeWhere((k, _) => k.startsWith(prefix));
+    }
   }
 
   Future<Map<String, dynamic>> post(String ep, {Map<String, dynamic>? body}) async {
@@ -297,4 +315,27 @@ class ApiService {
       return [];
     }
   }
+
+  // === App Settings (update notifications) ===
+  Future<Map<String, dynamic>?> getSettings() async {
+    try {
+      final r = await http.get(Uri.parse('$baseUrl/api/v1/app-settings'), headers: _h);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('getSettings error: $e');
+    }
+    return null;
+  }
+}
+
+
+// ─── In-memory cache entry ─────────────────────────────────
+class _CachedEntry {
+  final Map<String, dynamic> data;
+  final DateTime _ts = DateTime.now();
+  _CachedEntry(this.data);
+  bool get isExpired =>
+      DateTime.now().difference(_ts) > const Duration(seconds: 30);
 }

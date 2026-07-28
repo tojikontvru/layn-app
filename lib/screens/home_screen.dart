@@ -43,8 +43,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAll() async {
-    await _loadCategories();
-    await _loadVideos();
+    // Parallel loading: categories + videos + ads all at once
+    await Future.wait([
+      _loadCategories(),
+      _loadVideos(),
+    ]);
   }
 
   Future<void> _loadCategories() async {
@@ -72,23 +75,32 @@ class _HomeScreenState extends State<HomeScreen> {
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
           .where((v) => !v.isShorts)
           .toList();
-      
+
       final meta = d['data'] ?? {};
-      // Load feed ads
-      final allAds = await ApiService.instance.ads();
-      final feedAds = allAds.where((a) => a.type == 'feed').toList();
       setState(() {
         _videos.clear();
         _videos.addAll(list);
-        _ads
-          ..clear()
-          ..addAll(feedAds);
         _lastPage = meta['last_page'] ?? 1;
         _loading = false;
       });
+
+      // Load ads in background after videos are shown
+      _loadAds();
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
+  }
+
+  Future<void> _loadAds() async {
+    try {
+      final allAds = await ApiService.instance.ads();
+      final feedAds = allAds.where((a) => a.type == 'feed').toList();
+      if (mounted) {
+        setState(() {
+          _ads..clear()..addAll(feedAds);
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadMore() async {
@@ -102,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
           .where((v) => !v.isShorts)
           .toList();
-      
+
       if (mounted) {
         setState(() {
           _videos.addAll(list);
@@ -123,64 +135,75 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: false,
         title: Row(children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.asset(
-              'assets/images/logo.png',
+            child: Image.network(
+              'https://layn.su/assets/images/logo.png',
               height: 32,
               width: 32,
               fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Icon(Icons.play_circle_fill,
+                  size: 32, color: theme.colorScheme.primary),
             ),
           ),
           const SizedBox(width: 8),
-          const Text('Layn',
+          Text('Layn',
               style: TextStyle(
-                  color: Colors.white,
+                  color: theme.textTheme.titleLarge?.color,
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5)),
         ]),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: Colors.white, size: 26),
+            icon: Icon(Icons.notifications_outlined,
+                color: theme.textTheme.titleMedium?.color, size: 26),
             onPressed: () {},
           ),
           const SizedBox(width: 4),
         ],
       ),
       body: Column(children: [
-        _buildCategories(),
-        Expanded(child: _buildBody()),
+        _buildCategories(theme, isDark),
+        Expanded(child: _buildBody(theme)),
       ]),
     );
   }
 
-  Widget _buildCategories() {
+  Widget _buildCategories(ThemeData theme, bool isDark) {
     return Container(
       height: 48,
-      decoration: const BoxDecoration(
-        color: Colors.black,
-        border: Border(bottom: BorderSide(color: Colors.white12, width: 0.5)),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: theme.dividerColor.withValues(alpha: 0.3),
+            width: 0.5,
+          ),
+        ),
       ),
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         children: [
-          _catChip('Все', null),
-          ..._categories.map((c) => _catChip(c.name, c.slug)),
+          _catChip('Все', null, theme, isDark),
+          ..._categories.map((c) => _catChip(c.name, c.slug, theme, isDark)),
         ],
       ),
     );
   }
 
-  Widget _catChip(String label, String? slug) {
+  Widget _catChip(String label, String? slug, ThemeData theme, bool isDark) {
     final active = _selectedCategory == slug;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -190,16 +213,20 @@ class _HomeScreenState extends State<HomeScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: active ? Colors.white : const Color(0xFF1A1A1A),
+            color: active
+                ? theme.colorScheme.primary
+                : (isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF0F0F0)),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: active ? Colors.white : const Color(0xFF333),
+              color: active
+                  ? theme.colorScheme.primary
+                  : (isDark ? const Color(0xFF333333) : const Color(0xFFDDDDDD)),
               width: 1,
             ),
           ),
           child: Text(label,
               style: TextStyle(
-                color: active ? Colors.black : Colors.grey[400],
+                color: active ? Colors.white : (isDark ? Colors.grey[400] : Colors.grey[700]),
                 fontSize: 13,
                 fontWeight: active ? FontWeight.w600 : FontWeight.normal,
               )),
@@ -208,12 +235,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Total items in list: videos + interleaved ads + loading indicator
-  int get _totalItems {
-    return _videoCountWithAds + (_loadingMore ? 1 : 0);
-  }
+  int get _totalItems => _videoCountWithAds + (_loadingMore ? 1 : 0);
 
-  /// Videos count + interleaved ads
   int get _videoCountWithAds {
     if (_ads.isEmpty) return _videos.length;
     if (_videos.isEmpty) return 0;
@@ -227,41 +250,43 @@ class _HomeScreenState extends State<HomeScreen> {
     return _videos.length + adCount;
   }
 
-  /// Return Video or Ad for the given flat list index
   dynamic _itemAt(int flatIndex) {
     if (_ads.isEmpty) return _videos[flatIndex];
-
     final ad = _ads.first;
     int videoIdx = 0;
     for (int i = 0; i <= flatIndex; i++) {
       int pos = i + 1;
       bool isAd = pos > ad.startAfter && (pos - ad.startAfter) % ad.interval == 0;
-      if (i == flatIndex) {
-        return isAd ? ad : _videos[videoIdx];
-      }
+      if (i == flatIndex) return isAd ? ad : _videos[videoIdx];
       if (!isAd) videoIdx++;
     }
     return _videos[flatIndex];
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(ThemeData theme) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)));
+      return Center(
+        child: CircularProgressIndicator(color: theme.colorScheme.primary),
+      );
     }
     if (_error != null) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.error_outline, color: Colors.red, size: 48),
         const SizedBox(height: 12),
-        Text(_error!, style: const TextStyle(color: Colors.white70)),
+        Text(_error!, style: theme.textTheme.bodyMedium),
         const SizedBox(height: 16),
         FilledButton(onPressed: _loadVideos, child: const Text('Повторить')),
       ]));
     }
     if (_videos.isEmpty) {
-      return const Center(child: Text('Нет видео', style: TextStyle(color: Colors.white54)));
+      return Center(
+        child: Text('Нет видео',
+            style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.textTheme.bodySmall?.color)),
+      );
     }
     return RefreshIndicator(
-      color: const Color(0xFFE53935),
+      color: theme.colorScheme.primary,
       onRefresh: _loadVideos,
       child: ListView.builder(
         controller: _scrollCtrl,
@@ -269,9 +294,11 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: _totalItems,
         itemBuilder: (_, i) {
           if (i == _videoCountWithAds) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator(color: Color(0xFFE53935))),
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: CircularProgressIndicator(color: theme.colorScheme.primary),
+              ),
             );
           }
           final item = _itemAt(i);

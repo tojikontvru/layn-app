@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'search_screen.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/ad_service.dart';
 import '../providers/auth_provider.dart';
 import 'video_screen.dart';
 
@@ -71,11 +72,17 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
   }
 
   Future<void> _loadShorts() async {
-    setState(() => _loading = true);
     try {
-      final api = Provider.of<ApiService>(context, listen: false);
-      final rawData = await api.shorts(page: _currentPage);
-      final newShorts = Short.fromResponse({'data': {'shorts': rawData}});
+      if (mounted) setState(() => _loading = true);
+      final api = ApiService.instance;
+      final rawData = await api
+          .shorts(page: _currentPage)
+          .timeout(const Duration(seconds: 20), onTimeout: () {
+        debugPrint('Shorts API timeout');
+        return [];
+      });
+      final newShorts =
+          Short.fromResponse({'data': {'shorts': rawData}});
       if (mounted) {
         setState(() {
           _shorts.addAll(newShorts);
@@ -95,8 +102,9 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       }
     } catch (e) {
       debugPrint('Shorts load error: $e');
-      if (mounted) setState(() => _loading = false);
     }
+    // Гарантированно убираем загрузку
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _loadMore() async {
@@ -104,7 +112,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     setState(() => _loadingMore = true);
     _currentPage++;
     try {
-      final api = Provider.of<ApiService>(context, listen: false);
+      final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
       final rawData = await api.shorts(page: _currentPage);
       final newShorts = Short.fromResponse({'data': {'shorts': rawData}});
       if (mounted) {
@@ -142,10 +150,11 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
 
     try {
       _vpc = VideoPlayerController.networkUrl(Uri.parse(url));
-      await _vpc!.initialize();
+      await _vpc!.initialize().timeout(const Duration(seconds: 15));
       if (!mounted) return;
       _vpc!.setLooping(true);
       _vpc!.setVolume(_isMuted ? 0 : 1);
+      _progressTimer?.cancel();
       await _vpc!.play();
 
       _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
@@ -194,8 +203,8 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       final isLiked = _likedMap[short.id] ?? false;
       if (!isLiked) {
         _likedMap[short.id] = true;
-        final api = Provider.of<ApiService>(context, listen: false);
-        api.reaction(short.id, 'like').catchError((_) {});
+        final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
+        api.reaction(short.id, 'like').then((_) {}).catchError((_) {});
       }
       setState(() {
         _heartPosition = details.localPosition;
@@ -242,12 +251,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_vpc == null) return;
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      _vpc!.pause();
-    }
+    // Не паузим — чтобы звук шёл при заблокированном экране
   }
 
   @override
@@ -305,6 +309,10 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                 setState(() => _currentIndex = index);
                 _playVideo(index);
                 if (index >= _shorts.length - 3) _loadMore();
+                // Реклама каждые 5 шортсов
+                if (index > 0 && index % 5 == 0) {
+                  AdService().showYandexInterstitial();
+                }
               },
               itemBuilder: (context, index) {
                 final short = _shorts[index];
@@ -461,7 +469,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                                     }
                                     final isSub = _subscribedMap[short.userId] ?? false;
                                     try {
-                                      final api = Provider.of<ApiService>(context, listen: false);
+                                      final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
                                       await api.subscribe(short.userId!);
                                       setState(() => _subscribedMap[short.userId!] = !isSub);
                                     } catch (_) {}
@@ -600,7 +608,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                                 return;
                               }
                               try {
-                                final api = Provider.of<ApiService>(context, listen: false);
+                                final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
                                 await api.reaction(short.id, 'like');
                                 setState(() => _likedMap[short.id] = !isLiked);
                               } catch (_) {}
@@ -871,6 +879,9 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
 
   /// Handle redirect from Shorts button
   void _handleRedirect(Short short) async {
+    // Stop current video
+    _vpc?.pause();
+
     final url = short.redirectUrl!;
     final type = short.redirectType ?? '';
 

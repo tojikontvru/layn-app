@@ -346,6 +346,7 @@ class Ad {
   final int startAfter;
   final int? showAtMinute;
   final int skipAfterSeconds;
+  final bool isActive;
 
   Ad({
     required this.id,
@@ -359,6 +360,7 @@ class Ad {
     this.startAfter = 0,
     this.showAtMinute,
     this.skipAfterSeconds = 5,
+    this.isActive = true,
   });
 
   factory Ad.fromJson(Map<String, dynamic> j) {
@@ -374,6 +376,7 @@ class Ad {
       startAfter: j['start_after'] is int ? j['start_after'] : int.tryParse(j['start_after'].toString()) ?? 0,
       showAtMinute: j['show_at_minute'] is int ? j['show_at_minute'] : (j['show_at_minute'] != null ? int.tryParse(j['show_at_minute'].toString()) : null),
       skipAfterSeconds: j['skip_after_seconds'] is int ? j['skip_after_seconds'] : int.tryParse(j['skip_after_seconds'].toString()) ?? 5,
+      isActive: j['is_active'] == true || j['is_active'] == 1 || j['is_active'] == '1',
     );
   }
 }

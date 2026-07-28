@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
+import '../services/ad_service.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/video_card.dart';
@@ -26,6 +27,9 @@ class _VideoScreenState extends State<VideoScreen>
   ChewieController? _cc;
   VideoPlayerController? _vpc;
   bool _loading = true;
+  static const _mediaChannel = MethodChannel('su.layn.app/media');
+  String? _lastMetadataTitle;
+  bool _lastPlayingState = true;
   bool _liked = false;
   bool _disliked = false;
   int _likeCount = 0;
@@ -56,6 +60,7 @@ class _VideoScreenState extends State<VideoScreen>
     ]).animate(_animCtrl);
     _likeCount = widget.video.views;
     _shareUrl = widget.video.shareUrl;
+    _mediaChannel.setMethodCallHandler(_handleMediaCommand);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
@@ -92,7 +97,40 @@ class _VideoScreenState extends State<VideoScreen>
           handleColor: Theme.of(context).colorScheme.primary,
           bufferedColor: Colors.grey.shade700,
         ),
-        placeholder: Container(color: Colors.black),
+        placeholder: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              widget.video.thumb,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(color: Colors.black),
+              loadingBuilder: (_, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  color: Colors.black,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      child,
+                      const Center(
+                        child: CircularProgressIndicator(
+                          color: Colors.white54,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const Center(
+              child: CircularProgressIndicator(
+                color: Colors.white54,
+                strokeWidth: 2,
+              ),
+            ),
+          ],
+        ),
         errorBuilder: (_, msg) => Container(
           color: Colors.black,
           child: Center(
@@ -101,7 +139,7 @@ class _VideoScreenState extends State<VideoScreen>
               children: [
                 const Icon(Icons.error_outline, color: Colors.red, size: 48),
                 const SizedBox(height: 8),
-                Text(msg ?? 'Ошибка воспроизведения',
+                Text(msg,
                     style: const TextStyle(color: Colors.white)),
               ],
             ),
@@ -109,7 +147,21 @@ class _VideoScreenState extends State<VideoScreen>
         ),
       );
       WakelockPlus.enable();
-      if (mounted) setState(() => _loading = false);
+
+    // Auto-play next video when current ends
+    if (widget.related != null && widget.related!.isNotEmpty) {
+      _vpc!.addListener(() {
+        if (_vpc!.value.position >= _vpc!.value.duration - const Duration(milliseconds: 500) &&
+            _vpc!.value.duration > Duration.zero &&
+            !_disposed) {
+          _playNextVideo();
+        }
+      });
+    }
+      if (mounted) {
+        setState(() => _loading = false);
+        _sendMetadata(isPlaying: true);
+      }
     } catch (e) {
       if (!_disposed && mounted) {
         setState(() {
@@ -123,6 +175,7 @@ class _VideoScreenState extends State<VideoScreen>
   @override
   void dispose() {
     _disposed = true;
+    _releaseMediaSession();
     _animCtrl.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _cc?.dispose();
@@ -135,11 +188,68 @@ class _VideoScreenState extends State<VideoScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_cc == null) return;
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      _cc!.pause();
+    if (state == AppLifecycleState.resumed) {
+      _cc!.play();
     }
+  }
+
+  void _playNextVideo() {
+    if (!mounted) return;
+    if (_disposed) return;
+    final related = widget.related?.where((v) => v.id != widget.video.id).toList();
+    if (related == null || related.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Плейлист завершён'), duration: Duration(seconds: 1), backgroundColor: Colors.black87),
+        );
+      }
+      return;
+    }
+    final next = related.first;
+    _cc?.pause(); _vpc?.pause();
+
+    // Показываем рекламу перед следующим видео
+    AdService().showYandexInterstitial();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const Icon(Icons.play_circle_outline, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(next.title.isNotEmpty ? next.title : 'Следующее видео', overflow: TextOverflow.ellipsis)),
+        ]),
+        duration: const Duration(seconds: 2), backgroundColor: Colors.black87,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
+      ));
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VideoScreen(video: next, related: widget.related)));
+      });
+    }
+  }
+
+
+  void _sendMetadata({bool isPlaying = true}) {
+    final title = widget.video.title.isNotEmpty ? widget.video.title : 'Видео без названия';
+    final channel = widget.video.user?.username ?? '';
+    if (title == _lastMetadataTitle && isPlaying == _lastPlayingState) return;
+    _lastMetadataTitle = title;
+    _lastPlayingState = isPlaying;
+    try { _mediaChannel.invokeMethod('update', {'title': title, 'channel': channel, 'isPlaying': isPlaying}); } catch (_) {}
+  }
+
+  Future<dynamic> _handleMediaCommand(MethodCall call) async {
+    switch (call.method) {
+      case 'onPlay': _cc?.play(); _sendMetadata(isPlaying: true); break;
+      case 'onPause': _cc?.pause(); _sendMetadata(isPlaying: false); break;
+      case 'onStop': _releaseMediaSession(); break;
+    }
+  }
+
+  void _releaseMediaSession() {
+    try { _mediaChannel.invokeMethod('release'); } catch (_) {}
+    _lastMetadataTitle = null;
   }
 
   String _formatCount(int n) {

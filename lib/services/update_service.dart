@@ -1,91 +1,113 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'api_service.dart';
 
 class UpdateService {
-  static const String _versionUrl = 'https://layn.su/assets/app-version.json';
-
-  static Future<void> checkForUpdates(BuildContext context, {bool showAlways = false}) async {
+  static Future<void> checkForUpdates(BuildContext context) async {
     try {
-      final response = await http.get(Uri.parse(_versionUrl)).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) return;
+      final api = ApiService.instance;
+      final response = await api.getSettings();
 
-      final data = json.decode(response.body);
-      final serverVersion = data['version'] ?? '';
-      final serverBuild = data['build'] ?? 0;
-      final downloadUrl = data['download_url'] ?? '';
-      final changelog = data['changelog'] ?? '';
+      if (response == null) return;
 
-      final packageInfo = await PackageInfo.fromPlatform();
-      final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+      final data = response['data'] as Map<String, dynamic>?;
+      if (data == null) return;
 
-      if (serverBuild > currentBuild && context.mounted) {
-        _showUpdateDialog(context, version: serverVersion, downloadUrl: downloadUrl, changelog: changelog);
-      } else if (showAlways && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Row(children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Text('У вас последняя версия'),
-          ]),
-          backgroundColor: const Color(0xFF2E7D32),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ));
+      final forceUpdate = data['force_update'] == true;
+      final showNotice = data['show_update_notice'] == true;
+      final appVersion = data['app_version'] as String? ?? '1.0.0';
+      final downloadUrl = data['download_url'] as String? ?? '';
+      final updateTitle = data['update_title'] as String? ?? 'New Update Available';
+      final updateMessage = data['update_message'] as String? ?? 'A new version is available. Please update to continue.';
+
+      final currentVersion = await _getCurrentVersion();
+      final hasNewVersion = _isNewer(appVersion, currentVersion);
+
+      if (!hasNewVersion) return;
+
+      if (forceUpdate) {
+        _showForceUpdateDialog(context, downloadUrl, updateTitle, updateMessage);
+      } else if (showNotice) {
+        _showUpdateNoticeDialog(context, downloadUrl, updateTitle, updateMessage);
       }
-    } catch (_) {
-      if (showAlways && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Не удалось проверить обновления'),
-          backgroundColor: Colors.orange.shade800,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
+    } catch (e) {
+      debugPrint('UpdateService: check failed: $e');
     }
   }
 
-  static void _showUpdateDialog(BuildContext context, {required String version, required String downloadUrl, required String changelog}) {
+  static void _showForceUpdateDialog(
+      BuildContext context, String url, String title, String message) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(children: [
-          Icon(Icons.system_update, color: Color(0xFFE53935)),
-          SizedBox(width: 8),
-          Text('Обновление', style: TextStyle(color: Colors.white)),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Версия $version', style: const TextStyle(color: Color(0xFFE53935))),
-            const SizedBox(height: 8),
-            if (changelog.isNotEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: const Color(0xFF2A2A2A), borderRadius: BorderRadius.circular(8)),
-                child: Text(changelog, style: TextStyle(color: Colors.grey[300], fontSize: 13)),
-              ),
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                if (url.isNotEmpty) {
+                  launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                }
+              },
+              child: const Text('Update Now'),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  static void _showUpdateNoticeDialog(
+      BuildContext context, String url, String title, String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Позже', style: TextStyle(color: Colors.grey[400]))),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Later'),
+          ),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final uri = Uri.parse(downloadUrl);
-              if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            onPressed: () {
+              if (url.isNotEmpty) {
+                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              }
+              Navigator.of(ctx).pop();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
-            child: const Text('Скачать', style: TextStyle(color: Colors.white)),
+            child: const Text('Update'),
           ),
         ],
       ),
     );
+  }
+
+  static Future<String> _getCurrentVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return info.version;
+    } catch (_) {}
+    return '1.0.0';
+  }
+
+  static bool _isNewer(String remote, String current) {
+    try {
+      final rParts = remote.split('.').map(int.parse).toList();
+      final cParts = current.split('.').map(int.parse).toList();
+      for (int i = 0; i < 3; i++) {
+        final r = rParts.length > i ? rParts[i] : 0;
+        final c = cParts.length > i ? cParts[i] : 0;
+        if (r > c) return true;
+        if (r < c) return false;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 }

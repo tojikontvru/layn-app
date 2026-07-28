@@ -106,7 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Theme.of(context)
                     .colorScheme
                     .primary
-                    .withOpacity(0.1),
+                    .withValues(alpha: 0.1),
                 Theme.of(context).scaffoldBackgroundColor,
               ],
             ),
@@ -248,7 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         color: Theme.of(context)
             .colorScheme
             .surfaceContainerHighest
-            .withOpacity(0.3),
+            .withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(children: items),

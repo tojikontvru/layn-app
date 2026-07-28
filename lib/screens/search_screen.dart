@@ -31,6 +31,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Column(children: [
       SafeArea(
         child: Padding(
@@ -38,18 +41,25 @@ class _SearchScreenState extends State<SearchScreen> {
           child: TextField(
             controller: _ctrl,
             focusNode: _focus,
-            style: const TextStyle(color: Colors.white),
+            style: theme.textTheme.bodyLarge,
             decoration: InputDecoration(
               hintText: 'Поиск видео...',
-              hintStyle: TextStyle(color: Colors.grey[600]),
-              prefixIcon: const Icon(Icons.search, color: Colors.grey),
+              hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                color: isDark ? Colors.grey[600] : Colors.grey[500],
+              ),
+              prefixIcon: Icon(Icons.search,
+                  color: isDark ? Colors.grey : Colors.grey[600]),
               filled: true,
-              fillColor: const Color(0xFF1A1A1A),
+              fillColor: isDark
+                  ? const Color(0xFF1A1A1A)
+                  : const Color(0xFFF5F5F5),
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
               suffixIcon: _ctrl.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear, color: Colors.grey),
+                      icon: Icon(Icons.clear,
+                          color: isDark ? Colors.grey : Colors.grey[600]),
                       onPressed: () { _ctrl.clear(); setState(() {}); })
                   : null,
             ),
@@ -61,24 +71,35 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       Expanded(
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)))
+            ? Center(
+                child: CircularProgressIndicator(
+                    color: theme.colorScheme.primary))
             : !_searched
                 ? Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.search, color: Colors.grey[800], size: 64),
+                      Icon(Icons.search,
+                          color: isDark ? Colors.grey[800] : Colors.grey[400],
+                          size: 64),
                       const SizedBox(height: 12),
-                      Text('Найти видео', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
+                      Text('Найти видео',
+                          style: TextStyle(
+                              color: isDark ? Colors.grey[600] : Colors.grey[500],
+                              fontSize: 16)),
                     ]),
                   )
                 : _results.isEmpty
-                    ? const Center(child: Text('Ничего не найдено', style: TextStyle(color: Colors.grey)))
+                    ? Center(
+                        child: Text('Ничего не найдено',
+                            style: TextStyle(
+                                color: isDark ? Colors.grey : Colors.grey[600])))
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         itemCount: _results.length,
                         itemBuilder: (_, i) => VideoCard(
                           video: _results[i],
                           onTap: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => VideoScreen(video: _results[i], related: _results))),
+                              MaterialPageRoute(builder: (_) =>
+                                  VideoScreen(video: _results[i], related: _results))),
                         ),
                       ),
       ),
