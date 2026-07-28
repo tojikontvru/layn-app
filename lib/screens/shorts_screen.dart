@@ -36,9 +36,19 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
   bool _isInitialized = false;
   bool _isMuted = false;
 
+  // Race condition protection
+  int _requestId = 0;
+
+  // Prefetch
+  VideoPlayerController? _prefetchedVpc;
+  int? _prefetchedForIndex;
+
+  // Error state
+  bool _initFailed = false;
+
   // Like
   final Map<int, bool> _likedMap = {};
-  
+
   // Subscribe
   final Map<int, bool> _subscribedMap = {};
 
@@ -51,6 +61,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
   // Play/pause
   bool _showPlayIcon = false;
   Timer? _hidePlayTimer;
+  Timer? _singleTapTimer;
 
   // Progress
   double _progress = 0.0;
@@ -103,7 +114,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     } catch (e) {
       debugPrint('Shorts load error: $e');
     }
-    // Гарантированно убираем загрузку
+    // Гарантированно убираем загрузка
     if (mounted) setState(() => _loading = false);
   }
 
@@ -112,7 +123,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     setState(() => _loadingMore = true);
     _currentPage++;
     try {
-      final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
+      final api = ApiService.instance;
       final rawData = await api.shorts(page: _currentPage);
       final newShorts = Short.fromResponse({'data': {'shorts': rawData}});
       if (mounted) {
@@ -127,34 +138,80 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     }
   }
 
+  Future<void> _prefetchNext() async {
+    final nextIndex = _currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= _shorts.length) return;
+    if (_prefetchedForIndex == nextIndex && _prefetchedVpc != null) return;
+
+    final url = abs(_shorts[nextIndex].videoUrl);
+    if (url.isEmpty) return;
+
+    try {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      await controller.initialize().timeout(const Duration(seconds: 10));
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+
+      // Only keep if still the same target
+      if (_prefetchedForIndex == nextIndex) {
+        _prefetchedVpc?.dispose();
+        _prefetchedVpc = controller;
+      } else {
+        controller.dispose();
+      }
+    } catch (_) {
+      // Silently ignore prefetch failures
+    }
+  }
+
   Future<void> _playVideo(int index) async {
     if (index < 0 || index >= _shorts.length) return;
-    _vpc?.dispose();
+
+    // Increment request ID to track this specific play request
+    final currentRequestId = ++_requestId;
+
     _progressTimer?.cancel();
+    _vpc?.dispose();
 
     final url = abs(_shorts[index].videoUrl);
     if (url.isEmpty) {
+      if (currentRequestId != _requestId) return;
       setState(() {
         _isInitialized = false;
         _isPlaying = false;
         _progress = 0.0;
+        _initFailed = false;
       });
       return;
     }
+
+    if (currentRequestId != _requestId) return;
 
     setState(() {
       _isInitialized = false;
       _isPlaying = false;
       _progress = 0.0;
+      _initFailed = false;
     });
 
     try {
       _vpc = VideoPlayerController.networkUrl(Uri.parse(url));
       await _vpc!.initialize().timeout(const Duration(seconds: 15));
+
+      // Race condition check: has a newer play request been made?
+      if (currentRequestId != _requestId) {
+        _vpc!.dispose();
+        return;
+      }
+
+      // Cancel progress timer from any previous request
+      _progressTimer?.cancel();
+
       if (!mounted) return;
       _vpc!.setLooping(true);
       _vpc!.setVolume(_isMuted ? 0 : 1);
-      _progressTimer?.cancel();
       await _vpc!.play();
 
       _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
@@ -168,10 +225,27 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         }
       });
 
-      if (mounted) setState(() { _isInitialized = true; _isPlaying = true; });
+      if (!mounted) return;
+      setState(() { _isInitialized = true; _isPlaying = true; });
+
+      // Prefetch next video
+      _prefetchNext();
     } catch (e) {
       debugPrint('Shorts play error: $e');
+      if (currentRequestId != _requestId) return;
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+          _isPlaying = false;
+          _initFailed = true;
+        });
+      }
     }
+  }
+
+  void _retryPlay() {
+    _initFailed = false;
+    _playVideo(_currentIndex);
   }
 
   void _togglePlayPause() {
@@ -198,12 +272,15 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
   void _handleTap(TapDownDetails details) {
     final now = DateTime.now();
     if (_lastTap != null && now.difference(_lastTap!).inMilliseconds < 300) {
+      // Double tap detected
       _lastTap = null;
+      _singleTapTimer?.cancel();
+
       final short = _shorts[_currentIndex];
       final isLiked = _likedMap[short.id] ?? false;
       if (!isLiked) {
         _likedMap[short.id] = true;
-        final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
+        final api = ApiService.instance;
         api.reaction(short.id, 'like').then((_) {}).catchError((_) {});
       }
       setState(() {
@@ -215,8 +292,14 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         if (mounted) setState(() => _showHeart = false);
       });
     } else {
+      // Possible single tap — wait to see if second tap comes
       _lastTap = now;
-      _togglePlayPause();
+      _singleTapTimer?.cancel();
+      _singleTapTimer = Timer(const Duration(milliseconds: 250), () {
+        if (mounted) {
+          _togglePlayPause();
+        }
+      });
     }
   }
 
@@ -242,8 +325,10 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this);
     _heartTimer?.cancel();
     _hidePlayTimer?.cancel();
+    _singleTapTimer?.cancel();
     _progressTimer?.cancel();
     _vpc?.dispose();
+    _prefetchedVpc?.dispose();
     _pageController.dispose();
     WakelockPlus.disable();
     super.dispose();
@@ -298,7 +383,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       backgroundColor: Colors.black,
       body: Column(
         children: [
-          // === PAGE VIEW — ALL UI INSIDE per-page ===
           Expanded(
             child: PageView.builder(
               controller: _pageController,
@@ -309,7 +393,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                 setState(() => _currentIndex = index);
                 _playVideo(index);
                 if (index >= _shorts.length - 3) _loadMore();
-                // Реклама каждые 5 шортсов
                 if (index > 0 && index % 5 == 0) {
                   AdService().showYandexInterstitial();
                 }
@@ -317,13 +400,13 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
               itemBuilder: (context, index) {
                 final short = _shorts[index];
                 final isCurrent = index == _currentIndex;
-                final isLiked = _likedMap[short.id] ?? false;
 
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // === VIDEO ===
-                    if (isCurrent && _isInitialized && _vpc != null)
+                    if (isCurrent && _initFailed)
+                      _buildErrorState(short)
+                    else if (isCurrent && _isInitialized && _vpc != null)
                       Center(
                         child: AspectRatio(
                           aspectRatio: _vpc!.value.aspectRatio > 0
@@ -340,7 +423,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         errorWidget: (_, __, ___) => Container(color: Colors.black),
                       ),
 
-                    // === TAP OVERLAY (play/pause + double tap like) ===
                     if (isCurrent)
                       Positioned.fill(
                         child: GestureDetector(
@@ -350,7 +432,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         ),
                       ),
 
-                    // === BOTTOM GRADIENT ===
                     Positioned(
                       left: 0, right: 0, bottom: 0,
                       child: IgnorePointer(
@@ -367,7 +448,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                       ),
                     ),
 
-                    // === TOP GRADIENT ===
                     Positioned(
                       left: 0, right: 0, top: 0,
                       child: IgnorePointer(
@@ -384,7 +464,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                       ),
                     ),
 
-                    // === TOP BAR ===
                     Positioned(
                       top: 0, left: 0, right: 0,
                       child: Container(
@@ -419,7 +498,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                       ),
                     ),
 
-                    // === BOTTOM INFO (avatar + channel + subscribe, then title) ===
                     Positioned(
                       left: 12, right: 72,
                       bottom: 52,
@@ -427,7 +505,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Row: avatar + channel name + subscribe
                           Row(
                             children: [
                               CircleAvatar(
@@ -469,7 +546,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                                     }
                                     final isSub = _subscribedMap[short.userId] ?? false;
                                     try {
-                                      final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
+                                      final api = ApiService.instance;
                                       await api.subscribe(short.userId!);
                                       setState(() => _subscribedMap[short.userId!] = !isSub);
                                     } catch (_) {}
@@ -492,7 +569,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                             ],
                           ),
                           const SizedBox(height: 8),
-                          // Title
                           Text(
                             short.title,
                             style: const TextStyle(
@@ -510,7 +586,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                                 shadows: const [Shadow(blurRadius: 3, color: Colors.black54)],
                               ),
                             ),
-                          // === REDIRECT BUTTON ===
                           if (short.redirectUrl != null && short.redirectUrl!.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 6),
@@ -544,7 +619,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         ],
                       ),
                     ),
-                    // === Смотреть полностью — красивая кнопка внизу ===
+
                     if (short.redirectUrl != null && short.redirectUrl!.isNotEmpty)
                       Positioned(
                         left: 16,
@@ -590,7 +665,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         ),
                       ),
 
-                    // === RIGHT SIDE BUTTONS ===
                     Positioned(
                       right: 8, bottom: 120,
                       child: Column(
@@ -608,7 +682,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                                 return;
                               }
                               try {
-                                final api = ApiService.instance;      // ← фикс: синглтон вместо Provider
+                                final api = ApiService.instance;
                                 await api.reaction(short.id, 'like');
                                 setState(() => _likedMap[short.id] = !isLiked);
                               } catch (_) {}
@@ -634,8 +708,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                       ),
                     ),
 
-                    // === DOUBLE TAP HEART ===
-                    if (isCurrent && _showHeart)
+                    if (isCurrent && _showHeart && !_initFailed)
                       Positioned(
                         left: _heartPosition.dx - 36,
                         top: _heartPosition.dy - 36,
@@ -655,8 +728,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         ),
                       ),
 
-                    // === PLAY/PAUSE CENTER ===
-                    if (isCurrent && _showPlayIcon)
+                    if (isCurrent && _showPlayIcon && !_initFailed)
                       IgnorePointer(
                         child: Center(
                           child: AnimatedOpacity(
@@ -681,7 +753,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
             ),
           ),
 
-          // === FIXED RED PROGRESS BAR ===
           GestureDetector(
             onHorizontalDragUpdate: _onSeek,
             onHorizontalDragEnd: _onSeekEnd,
@@ -728,6 +799,37 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     );
   }
 
+  Widget _buildErrorState(Short short) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(color: Colors.black),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'Не удалось загрузить видео',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: _retryPlay,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                label: const Text('Повторить', style: TextStyle(color: Colors.white)),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.15),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSkeleton(Short short) {
     return Stack(
       fit: StackFit.expand,
@@ -746,7 +848,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
               child: Icon(Icons.error_outline, color: Colors.white54, size: 48)),
           ),
         ),
-        if (!_isInitialized)
+        if (!_isInitialized && !_initFailed)
           Container(
             color: Colors.black.withValues(alpha: 0.3),
             child: Center(
@@ -877,23 +979,18 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     );
   }
 
-  /// Handle redirect from Shorts button
   void _handleRedirect(Short short) async {
-    // Stop current video
     _vpc?.pause();
 
     final url = short.redirectUrl!;
     final type = short.redirectType ?? '';
 
-    // 'url' → external link, 'internal' → video ID, anything else → try video then URL
     if (type == 'url') {
-      // External URL — open in browser
       final uri = Uri.tryParse(url);
       if (uri != null && await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } else {
-      // 'internal' or default: treat as video — try to extract video ID
       final videoId = _extractVideoId(url);
       if (videoId != null && videoId > 0) {
         try {
@@ -905,7 +1002,6 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                 MaterialPageRoute(builder: (_) => VideoScreen(video: video)));
           }
         } catch (_) {
-          // Fallback: open URL in browser
           final uri = Uri.tryParse(url);
           if (uri != null && await canLaunchUrl(uri)) {
             await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -920,12 +1016,9 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     }
   }
 
-  /// Extract video ID from various URL patterns
   int? _extractVideoId(String url) {
-    // If the URL is purely a number, it's a video ID
     final pureNum = int.tryParse(url);
     if (pureNum != null) return pureNum;
-    // Extract from URL patterns
     final match1 = RegExp(r'/play/(\d+)').firstMatch(url);
     if (match1 != null) return int.tryParse(match1.group(1)!);
     final match2 = RegExp(r'[?&]id=(\d+)').firstMatch(url);
