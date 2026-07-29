@@ -30,6 +30,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate debug keystore for CI
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Build APK
         run: flutter build apk --no-tree-shake-icons --target-platform android-arm64
 
