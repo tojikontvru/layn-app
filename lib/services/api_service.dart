@@ -319,7 +319,7 @@ class ApiService {
   // === App Settings (update notifications) ===
   Future<Map<String, dynamic>?> getSettings() async {
     try {
-      final r = await http.get(Uri.parse('$baseUrl/api/v1/app-settings'), headers: _h);
+      final r = await http.get(Uri.parse('$baseUrl/app-settings'), headers: _h);
       if (r.statusCode == 200) {
         return jsonDecode(r.body) as Map<String, dynamic>;
       }
