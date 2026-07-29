@@ -223,7 +223,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         _prefetchedForIndex = null;
       } else {
         final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-        await controller.initialize().timeout(const Duration(seconds: 15));
+        await controller.initialize().timeout(const Duration(seconds: 8));
 
         // Race condition check: has a newer play request been made?
         if (currentRequestId != _requestId) {
@@ -456,7 +456,23 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
                         ),
                       )
                     else if (isCurrent)
-                      _buildSkeleton(short)
+                      Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CachedNetworkImage(
+                            imageUrl: short.thumbnailUrl,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(color: Colors.black),
+                          ),
+                          if (!_isInitialized && !_initFailed)
+                            Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                strokeWidth: 2,
+                              ),
+                            ),
+                        ],
+                      )
                     else
                       CachedNetworkImage(
                         imageUrl: short.thumbnailUrl,
