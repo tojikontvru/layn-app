@@ -36,6 +36,15 @@ jobs:
           if [ ! -f ~/.android/debug.keystore ]; then
             keytool -genkey -v -keystore ~/.android/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US"
           fi
+          echo "HOME in keystore step: $HOME"
+          ls -la ~/.android/ || echo "MISSING at keystore step"
+          ls -la /home/runner/.android/ || echo "not at /home/runner/.android"
+
+      - name: Verify keystore before build
+        run: |
+          echo "HOME in build step: $HOME"
+          ls -la ~/.android/ || echo "MISSING at build step"
+          ls -la /home/runner/.android/debug.keystore || echo "MISSING exact path"
 
       - name: Build APK
         run: flutter build apk --no-tree-shake-icons --target-platform android-arm64
