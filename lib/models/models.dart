@@ -55,6 +55,7 @@ class Video {
   final String? channelName;
   final String? avatar;
   final int? commentsCount;
+  final int? likesCount;
 
   Video({
     required this.id,
@@ -71,6 +72,7 @@ class Video {
     this.channelName,
     this.avatar,
     this.commentsCount,
+      this.likesCount,
     this.categorySlug,
     this.slug,
   });
@@ -103,6 +105,7 @@ class Video {
         channelName: j['user']?['channel_name'] ?? j['channel_name'] ?? j['firstname'],
         avatar: abs(j['user']?['avatar'] ?? j['avatar'] ?? ''),
         commentsCount: j['comments_count'],
+        likesCount: j['likes_count'] ?? j['likes'],
         categorySlug: j['category']?['slug'] ?? j['category_slug'] ?? j['slug'],
         slug: j['slug'],
       );

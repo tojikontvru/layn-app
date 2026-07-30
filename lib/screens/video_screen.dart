@@ -58,7 +58,7 @@ class _VideoScreenState extends State<VideoScreen>
       TweenSequenceItem(tween: Tween(begin: 1.3, end: 0.9), weight: 20),
       TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.0), weight: 40),
     ]).animate(_animCtrl);
-    _likeCount = widget.video.views;
+    _likeCount = widget.video.likesCount ?? 0;
     _shareUrl = widget.video.shareUrl;
     _mediaChannel.setMethodCallHandler(_handleMediaCommand);
     SystemChrome.setPreferredOrientations([
@@ -294,12 +294,12 @@ class _VideoScreenState extends State<VideoScreen>
     try {
       await api.reaction(widget.video.id, 'like');
       setState(() {
-        _liked = !_liked;
+        _liked = !(_disliked || _liked);
         if (_liked) {
           _likeCount++;
           _disliked = false;
         } else {
-          _likeCount--;
+          _likeCount = _likeCount > 0 ? _likeCount - 1 : 0;
         }
       });
     } catch (e) {
@@ -547,7 +547,7 @@ class _VideoScreenState extends State<VideoScreen>
                         ),
                       const Spacer(),
                       const Spacer(),
-                      // Playlist — clean outlined icon
+                      // Playlist — жирная иконка
                       GestureDetector(
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -558,13 +558,14 @@ class _VideoScreenState extends State<VideoScreen>
                           );
                         },
                         child: Icon(
-                          Icons.bookmark_border,
-                          size: 22,
+                          Icons.playlist_add_rounded,
+                          size: 26,
+                          weight: 700,
                           color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                       ),
-                      const SizedBox(width: 18),
-                      // Like ♡ — clean with count
+                      const SizedBox(width: 22),
+                      // Like 👍 — жирная иконка с реальным счётчиком
                       GestureDetector(
                         onTap: _onLike,
                         child: Row(
@@ -576,9 +577,10 @@ class _VideoScreenState extends State<VideoScreen>
                                 return Transform.scale(
                                   scale: _likeAnim.value,
                                   child: Icon(
-                                    _liked ? Icons.favorite : Icons.favorite_border,
-                                    size: 22,
-                                    color: _liked ? Colors.red : Theme.of(context).textTheme.bodySmall?.color,
+                                    _liked ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
+                                    size: 26,
+                                    weight: 700,
+                                    color: _liked ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodySmall?.color,
                                   ),
                                 );
                               },
@@ -587,23 +589,24 @@ class _VideoScreenState extends State<VideoScreen>
                             Text(
                               _formatCount(_likeCount),
                               style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                                 color: _liked
-                                    ? Colors.red
+                                    ? Theme.of(context).colorScheme.primary
                                     : Theme.of(context).textTheme.bodySmall?.color,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 18),
-                      // Share — clean outlined icon
+                      const SizedBox(width: 22),
+                      // Share — жирная иконка
                       GestureDetector(
                         onTap: () => Share.share(_shareUrl),
                         child: Icon(
-                          Icons.ios_share,
-                          size: 22,
+                          Icons.share_rounded,
+                          size: 26,
+                          weight: 700,
                           color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                       ),
