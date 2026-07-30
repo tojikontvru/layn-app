@@ -228,6 +228,7 @@ class _MainScreenState extends State<MainScreen> {
     final tabWidth = MediaQuery.of(context).size.width - tabMargin * 2;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,  // ✅ убираем чёрный фон под капсулой
       body: ValueListenableBuilder<bool>(
         valueListenable: _uiVisible,
         builder: (context, visible, _) => Stack(
@@ -287,7 +288,7 @@ class _MainScreenState extends State<MainScreen> {
               child: Row(
                 children: [
                   _navItem(0, Icons.home_outlined, Icons.home, 'Главная'),
-                  _navItem(1, Icons.search, Icons.search, 'Поиск'),
+                  _navItem(1, Icons.search_outlined, Icons.search, 'Поиск'),  // ✅ outlined как все
                   _navItem(2, Icons.person_outline, Icons.person, 'Профиль'),
                 ],
               ),
@@ -305,7 +306,7 @@ class _MainScreenState extends State<MainScreen> {
     final inactiveColor = isDark ? _navInactiveColor : Colors.grey.shade500;
 
     return Expanded(
-      child: InkWell(
+      child: GestureDetector(  // ✅ GestureDetector вместо InkWell — не зависает
         onTap: () {
           if (index != _idx) _uiVisible.value = true;
           setState(() => _idx = index);
@@ -317,13 +318,12 @@ class _MainScreenState extends State<MainScreen> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(height: 8),
             Icon(
               selected ? selectedIcon : icon,
               color: selected ? activeColor : inactiveColor,
               size: 25,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               label,
               style: TextStyle(
@@ -333,7 +333,6 @@ class _MainScreenState extends State<MainScreen> {
                 letterSpacing: 0.2,
               ),
             ),
-            const SizedBox(height: 6),
           ],
         ),
       ),
