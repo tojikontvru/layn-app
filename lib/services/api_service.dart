@@ -95,7 +95,6 @@ class ApiService {
     final videos = d['data']?['videos'] as List? ?? d['data'] as List? ?? [];
     return videos
         .map((e) => Video.fromJson(e as Map<String, dynamic>))
-        .where((v) => !v.isShorts)
         .toList();
   }
 
@@ -144,44 +143,6 @@ class ApiService {
 
   Future<Map<String, dynamic>> reaction(int videoId, String type) =>
       post('/reaction', body: {'video_id': videoId, 'reaction': type});
-
-  // === Shorts ===
-  Future<List<dynamic>> shorts({int page = 1}) async {
-    final r = await http.get(Uri.parse('$shortsUrl?page=$page'), headers: _h);
-    if (r.statusCode >= 200 && r.statusCode < 300) {
-      final d = jsonDecode(r.body) as Map<String, dynamic>;
-      return (d['data']?['shorts'] ?? d['data']?['videos'] ?? []) as List;
-    }
-    throw HttpException('HTTP ${r.statusCode}');
-  }
-
-  /// Загружает шортсы и возвращает Set ID (для исключения с главной)
-  Future<Set<int>> shortsIds() async {
-    final ids = <int>{};
-    try {
-      for (int page = 1; page <= 3; page++) {
-        final r = await http.get(Uri.parse('$shortsUrl?page=$page'), headers: _h);
-        if (r.statusCode != 200) {
-          debugPrint('shortsIds page=$page: HTTP ${r.statusCode}');
-          break;
-        }
-        final d = jsonDecode(r.body) as Map<String, dynamic>;
-        final shortsList = Short.fromResponse(d);
-        debugPrint('shortsIds page=$page: ${shortsList.length} shorts');
-        if (shortsList.isEmpty) break;
-        for (final s in shortsList) {
-          ids.add(s.id);
-        }
-        final meta = d['data'] ?? {};
-        final lastPage = meta['last_page'] ?? 1;
-        if (page >= lastPage) break;
-      }
-    } catch (e) {
-      debugPrint('shortsIds error: $e');
-    }
-    debugPrint('SHORTS IDs total: ${ids.length}');
-    return ids;
-  }
 
   // === Profile editing ===
   Future<Map<String, dynamic>> updateProfile({

@@ -7,7 +7,6 @@ import 'services/update_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
-import 'screens/shorts_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/profile_screen.dart';
 
@@ -190,7 +189,6 @@ class _MainScreenState extends State<MainScreen> {
 
   final _screens = const [
     HomeScreen(),
-    ShortsScreen(),
     SearchScreen(),
     ProfileScreen(),
   ];
@@ -215,7 +213,6 @@ class _MainScreenState extends State<MainScreen> {
         indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
-          NavigationDestination(icon: Icon(Icons.play_circle_outline), selectedIcon: Icon(Icons.play_circle), label: 'Shorts'),
           NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
           NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
         ],

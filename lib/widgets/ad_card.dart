@@ -5,15 +5,11 @@ import '../models/models.dart';
 
 class AdCard extends StatelessWidget {
   final Ad ad;
-  final bool isShort; // compact for shorts feed
 
-  const AdCard({super.key, required this.ad, this.isShort = false});
+  const AdCard({super.key, required this.ad});
 
   @override
   Widget build(BuildContext context) {
-    if (ad.type == 'shorts' || isShort) {
-      return _buildShortAd(context);
-    }
     return _buildFeedAd(context);
   }
 
@@ -105,102 +101,6 @@ class AdCard extends StatelessWidget {
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildShortAd(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Background image
-          if (ad.imageUrl != null && ad.imageUrl!.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: ad.imageUrl!,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: Colors.grey[900]),
-              errorWidget: (_, __, ___) => Container(color: Colors.grey[900]),
-            ),
-          // Dark gradient overlay
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black87],
-                stops: [0.5, 1.0],
-              ),
-            ),
-          ),
-          // Content
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 100,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Реклама',
-                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  ad.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (ad.description.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    ad.description,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 13,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: () => _openUrl(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      'Подробнее',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black,
                       ),
                     ),
                   ),

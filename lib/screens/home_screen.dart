@@ -73,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final videosRaw = (d['data']?['videos'] as List? ?? []);
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) => !v.isShorts)
           .toList();
 
       final meta = d['data'] ?? {};
@@ -112,7 +111,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final videosRaw = (d['data']?['videos'] as List? ?? []);
       final list = videosRaw
           .map((e) => Video.fromJson(e as Map<String, dynamic>))
-          .where((v) => !v.isShorts)
           .toList();
 
       if (mounted) {

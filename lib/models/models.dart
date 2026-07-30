@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:intl/intl.dart';
-import 'package:html/parser.dart' as html_parser;
 
 String abs(String url) {
   if (url.isEmpty) return url;
@@ -51,12 +50,11 @@ class Video {
   final int views;
   final String duration;
   final String createdAt;
-  final bool isShorts;
+  final String? categorySlug;
+  final String? slug;
   final String? channelName;
   final String? avatar;
   final int? commentsCount;
-  final String? categorySlug;
-  final String? slug;
 
   Video({
     required this.id,
@@ -70,7 +68,6 @@ class Video {
     this.views = 0,
     this.duration = '',
     this.createdAt = '',
-    this.isShorts = false,
     this.channelName,
     this.avatar,
     this.commentsCount,
@@ -103,7 +100,6 @@ class Video {
         views: j['views'] ?? 0,
         duration: j['duration'] ?? '',
         createdAt: j['created_at'] ?? '',
-        isShorts: (j['is_shorts'] ?? j['is_shorts_video'] ?? 0) == 1,
         channelName: j['user']?['channel_name'] ?? j['channel_name'] ?? j['firstname'],
         avatar: abs(j['user']?['avatar'] ?? j['avatar'] ?? ''),
         commentsCount: j['comments_count'],
@@ -153,185 +149,6 @@ class Category {
       );
 }
 
-class Short {
-  final int id;
-  final int? userId;
-  final String title;
-  final String videoUrl;
-  final String thumbnailUrl;
-  final int views;
-  final int likesCount;
-  final int commentsCount;
-  final String username;
-  final String avatar;
-  final String channelName;
-  final String? slug;
-  final String? redirectUrl;
-  final String? redirectType;
-  final String? redirectBtnTitle;
-
-  Short({
-    required this.id,
-    this.userId,
-    required this.title,
-    required this.videoUrl,
-    this.thumbnailUrl = '',
-    this.views = 0,
-    this.likesCount = 0,
-    this.commentsCount = 0,
-    this.username = '',
-    this.avatar = '',
-    this.channelName = '',
-    this.slug,
-    this.redirectUrl,
-    this.redirectType,
-    this.redirectBtnTitle,
-  });
-
-  String get shareUrl {
-    final s = slug ?? title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'-+'), '-').replaceAll(RegExp(r'^-|-$'), '');
-    return 'https://layn.su/short-play/$id/$s';
-  }
-
-  static List<Short> fromResponse(Map<String, dynamic> resp) {
-    final data = resp['data'];
-    if (data == null) return [];
-
-    // API /api/v1/shorts returns {data: {shorts: [...]}}
-    final videos = data['shorts'] ?? data['videos'];
-    if (videos is List) {
-      return videos.asMap().entries.map((e) {
-        final j = e.value as Map<String, dynamic>;
-        // videoData() returns user as nested object
-        final user = j['user'];
-        return Short(
-          id: j['id'] ?? e.key + 1,
-          userId: user?['id'],
-          title: j['title'] ?? '',
-          videoUrl: abs(j['video_url'] ?? ''),
-          thumbnailUrl: abs(j['thumb'] ?? j['thumbnail_url'] ?? ''),
-          views: j['views'] ?? 0,
-          likesCount: j['likes_count'] ?? j['likes'] ?? 0,
-          commentsCount: j['comments_count'] ?? j['comments'] ?? 0,
-          username: user?['username'] ?? j['username'] ?? '',
-          avatar: abs(user?['avatar'] ?? j['avatar'] ?? ''),
-          channelName: user?['channel_name'] ?? j['channel_name'] ?? '',
-          slug: j['slug'],
-          redirectUrl: j['redirect_url'] != null && j['redirect_url'].toString().isNotEmpty
-              ? j['redirect_url'].toString() : null,
-          redirectType: j['redirect_type'] != null && j['redirect_type'].toString().isNotEmpty
-              ? j['redirect_type'].toString() : null,
-          redirectBtnTitle: j['redirect_btn_title'] != null && j['redirect_btn_title'].toString().isNotEmpty
-              ? j['redirect_btn_title'].toString() : null,
-        );
-      }).toList();
-    }
-
-    if (videos is String && videos.isNotEmpty) {
-      return _parseHtml(videos);
-    }
-
-    return [];
-  }
-
-  static List<Short> _parseHtml(String html) {
-    final doc = html_parser.parse(html);
-    final shorts = <Short>[];
-    final seenUrls = <String>{};
-    int idx = 0;
-
-    // Strategy 1: <video> tags
-    for (final v in doc.querySelectorAll('video')) {
-      final src = v.querySelector('source')?.attributes['src'] ??
-          v.attributes['src'] ??
-          '';
-      if (src.isEmpty || seenUrls.contains(src)) continue;
-      seenUrls.add(src);
-
-      String title = '';
-      String poster = v.attributes['poster'] ?? '';
-      int views = 0;
-
-      var el = v.parent;
-      for (var i = 0; i < 5 && el != null; i++, el = el.parent) {
-        if (title.isEmpty) {
-          final h = el.querySelector('h5,h4,h3,.title,.short-title');
-          if (h != null) title = h.text.trim();
-        }
-        if (views == 0) {
-          final vm = RegExp(r'(\d[\d\s]*)').firstMatch(el.text);
-          if (vm != null) views = int.tryParse(vm.group(1)!.replaceAll(' ', '')) ?? 0;
-        }
-      }
-
-      shorts.add(Short(
-        id: ++idx,
-        title: title,
-        videoUrl: abs(src),
-        thumbnailUrl: abs(poster),
-        views: views,
-      ));
-    }
-
-    // Strategy 2: <a> tags with video href
-    for (final a in doc.querySelectorAll('a[href]')) {
-      final href = a.attributes['href'] ?? '';
-      if (!RegExp(r'\.(mp4|mov|m3u8|webm)(\?|$)', caseSensitive: false).hasMatch(href)) continue;
-      if (seenUrls.contains(href)) continue;
-      seenUrls.add(href);
-
-      String title = a.attributes['title'] ?? a.text.trim();
-      int views = 0;
-      final vm = RegExp(r'(\d[\d\s]*)').firstMatch(a.text);
-      if (vm != null) views = int.tryParse(vm.group(1)!.replaceAll(' ', '')) ?? 0;
-
-      shorts.add(Short(
-        id: ++idx,
-        title: title,
-        videoUrl: abs(href),
-        thumbnailUrl: '',
-        views: views,
-      ));
-    }
-
-    // Strategy 3: <source> tags (outside <video>)
-    for (final s in doc.querySelectorAll('source[src]')) {
-      final src = s.attributes['src'] ?? '';
-      if (!RegExp(r'\.(mp4|mov|m3u8|webm)(\?|$)', caseSensitive: false).hasMatch(src)) continue;
-      if (seenUrls.contains(src)) continue;
-      seenUrls.add(src);
-      shorts.add(Short(
-        id: ++idx,
-        title: '',
-        videoUrl: abs(src),
-        thumbnailUrl: '',
-        views: 0,
-      ));
-    }
-
-    // Strategy 4: Any element with data-video or data-src attributes
-    for (final el in doc.querySelectorAll('[data-video],[data-src],[data-url]')) {
-      final videoUrl = el.attributes['data-video'] ??
-          el.attributes['data-src'] ??
-          el.attributes['data-url'] ??
-          '';
-      if (videoUrl.isEmpty || seenUrls.contains(videoUrl)) continue;
-      seenUrls.add(videoUrl);
-      String title = el.attributes['title'] ?? el.text.trim();
-      if (title.length > 100) title = title.substring(0, 100);
-      shorts.add(Short(
-        id: ++idx,
-        title: title,
-        videoUrl: abs(videoUrl),
-        thumbnailUrl: abs(el.attributes['data-thumb'] ?? el.attributes['data-poster'] ?? ''),
-        views: 0,
-      ));
-    }
-
-    debugPrint('HTML parsed: ${shorts.length} shorts from HTML');
-    return shorts;
-  }
-}
 
 /// Ad model for in-app advertisements
 class Ad {
