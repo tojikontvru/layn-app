@@ -194,6 +194,13 @@ class _MainScreenState extends State<MainScreen> {
     ProfileScreen(),
   ];
 
+  // Warm dark nav bar colors (matching screenshot)
+  static const _navBgTop = Color(0xFF28221E);
+  static const _navBgBottom = Color(0xFF181412);
+  static const _navActiveColor = Color(0xFFE6D3BA);  // warm beige active
+  static const _navInactiveColor = Color(0xFF8A7C6C); // muted warm inactive
+  static const _navBarHeight = 72.0;
+
   @override
   void initState() {
     super.initState();
@@ -214,14 +221,14 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             // Body content — bottom padding animates to fill freed space
             AnimatedPadding(
-              padding: EdgeInsets.only(bottom: visible ? kBottomNavigationBarHeight : 0),
+              padding: EdgeInsets.only(bottom: visible ? _navBarHeight : 0),
               duration: const Duration(milliseconds: 200),
               child: IndexedStack(
                 index: _idx,
                 children: _screens,
               ),
             ),
-            // Navigation bar — overlaid, slides down/up, no bg leftover
+            // Navigation bar — кастомное, как на скриншоте
             Positioned(
               left: 0,
               right: 0,
@@ -229,22 +236,75 @@ class _MainScreenState extends State<MainScreen> {
               child: AnimatedSlide(
                 offset: Offset(0, visible ? 0 : 1),
                 duration: const Duration(milliseconds: 200),
-                child: NavigationBar(
-                  selectedIndex: _idx,
-                  onDestinationSelected: (i) {
-                    if (i != _idx) _uiVisible.value = true;
-                    setState(() => _idx = i);
-                  },
-                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                  indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                  destinations: const [
-                    NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
-                    NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
-                    NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
-                  ],
-                ),
+                child: _buildNavBar(),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Custom bottom nav bar — warm dark gradient, как на скриншоте
+  Widget _buildNavBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      height: _navBarHeight,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDark
+              ? [_navBgTop, _navBgBottom]
+              : [Colors.white, Colors.grey.shade100],
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            _navItem(0, Icons.home_outlined, Icons.home, 'Главная'),
+            _navItem(1, Icons.search, Icons.search, 'Поиск'),
+            _navItem(2, Icons.person_outline, Icons.person, 'Профиль'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem(int index, IconData icon, IconData selectedIcon, String label) {
+    final selected = _idx == index;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = isDark ? _navActiveColor : Colors.black;
+    final inactiveColor = isDark ? _navInactiveColor : Colors.grey.shade500;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          if (index != _idx) _uiVisible.value = true;
+          setState(() => _idx = index);
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 8),
+            Icon(
+              selected ? selectedIcon : icon,
+              color: selected ? activeColor : inactiveColor,
+              size: 25,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? activeColor : inactiveColor,
+                fontSize: 10.5,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 6),
           ],
         ),
       ),
