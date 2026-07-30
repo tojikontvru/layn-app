@@ -228,7 +228,7 @@ class _MainScreenState extends State<MainScreen> {
     final tabWidth = MediaQuery.of(context).size.width - tabMargin * 2;
 
     return Scaffold(
-      backgroundColor: _bgDark,  // ✅ цвет ленты — нет чёрного просвета под капсулой
+      backgroundColor: const Color(0xFF0F0F0F),  // цвет ленты — нет чёрного просвета под капсулой
       body: ValueListenableBuilder<bool>(
         valueListenable: _uiVisible,
         builder: (context, visible, _) => Stack(
