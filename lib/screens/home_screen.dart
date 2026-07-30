@@ -6,7 +6,10 @@ import '../widgets/ad_card.dart';
 import 'video_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final ValueNotifier<bool>? uiVisible;
+
+  const HomeScreen({super.key, this.uiVisible});
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -23,6 +26,10 @@ class _HomeScreenState extends State<HomeScreen> {
   int _lastPage = 1;
   String? _selectedCategory;
 
+  // Scroll hiding
+  bool _categoryVisible = true;
+  double _lastScrollOffset = 0;
+
   @override
   void initState() {
     super.initState();
@@ -36,9 +43,44 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // ═══ Scroll hide/show UI ═══
+  bool _uiHiddenByScroll = false;
+
   void _onScroll() {
-    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 400) {
+    if (!_scrollCtrl.hasClients) return;
+    final current = _scrollCtrl.position.pixels;
+    final diff = current - _lastScrollOffset;
+    _lastScrollOffset = current;
+
+    // Scroll DOWN (content goes up) → hide
+    if (diff > 8 && current > 80) {
+      if (!_uiHiddenByScroll) {
+        _uiHiddenByScroll = true;
+        widget.uiVisible?.value = false;
+        if (mounted) setState(() => _categoryVisible = false);
+      }
+    }
+    // Scroll UP (content comes down) → show
+    else if (diff < -8) {
+      if (_uiHiddenByScroll) {
+        _uiHiddenByScroll = false;
+        widget.uiVisible?.value = true;
+        if (mounted) setState(() => _categoryVisible = true);
+      }
+    }
+
+    // Load more
+    if (current >= _scrollCtrl.position.maxScrollExtent - 400) {
       _loadMore();
+    }
+  }
+
+  // Called when scrolling stops → show UI again
+  void _onScrollEnd() {
+    if (_uiHiddenByScroll) {
+      _uiHiddenByScroll = false;
+      widget.uiVisible?.value = true;
+      if (mounted) setState(() => _categoryVisible = true);
     }
   }
 
@@ -172,7 +214,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: Column(children: [
-        _buildCategories(theme, isDark),
+        // Category bar with smooth hide/show (collapses space)
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: _categoryVisible
+              ? SizedBox(height: 48, child: _buildCategories(theme, isDark))
+              : const SizedBox(height: 0),
+        ),
         Expanded(child: _buildBody(theme)),
       ]),
     );
@@ -283,33 +333,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: theme.textTheme.bodySmall?.color)),
       );
     }
-    return RefreshIndicator(
-      color: theme.colorScheme.primary,
-      onRefresh: _loadVideos,
-      child: ListView.builder(
-        controller: _scrollCtrl,
-        padding: const EdgeInsets.only(top: 4, bottom: 16),
-        itemCount: _totalItems,
-        itemBuilder: (_, i) {
-          if (i == _videoCountWithAds) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Center(
-                child: CircularProgressIndicator(color: theme.colorScheme.primary),
-              ),
+    return NotificationListener<ScrollEndNotification>(
+      onNotification: (notification) {
+        _onScrollEnd();
+        return false;
+      },
+      child: RefreshIndicator(
+        color: theme.colorScheme.primary,
+        onRefresh: _loadVideos,
+        child: ListView.builder(
+          controller: _scrollCtrl,
+          padding: const EdgeInsets.only(top: 4, bottom: 16),
+          itemCount: _totalItems,
+          itemBuilder: (_, i) {
+            if (i == _videoCountWithAds) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: CircularProgressIndicator(color: theme.colorScheme.primary),
+                ),
+              );
+            }
+            final item = _itemAt(i);
+            if (item is Ad) {
+              return AdCard(ad: item);
+            }
+            final video = item as Video;
+            return VideoCard(
+              video: video,
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => VideoScreen(video: video, related: _videos))),
             );
-          }
-          final item = _itemAt(i);
-          if (item is Ad) {
-            return AdCard(ad: item);
-          }
-          final video = item as Video;
-          return VideoCard(
-            video: video,
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => VideoScreen(video: video, related: _videos))),
-          );
-        },
+          },
+        ),
       ),
     );
   }

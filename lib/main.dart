@@ -186,8 +186,9 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _idx = 0;
+  final ValueNotifier<bool> _uiVisible = ValueNotifier(true);
 
-  final _screens = const [
+  final _screens = [
     HomeScreen(),
     SearchScreen(),
     ProfileScreen(),
@@ -196,6 +197,8 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    // Set up HomeScreen with scroll visibility
+    _screens[0] = HomeScreen(uiVisible: _uiVisible);
     // Check for app updates on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       UpdateService.checkForUpdates(context);
@@ -206,16 +209,27 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_idx],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _idx,
-        onDestinationSelected: (i) => setState(() => _idx = i),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
-          NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
-        ],
+      bottomNavigationBar: ValueListenableBuilder<bool>(
+        valueListenable: _uiVisible,
+        builder: (context, visible, child) => AnimatedSlide(
+          offset: Offset(0, visible ? 0 : 1),
+          duration: const Duration(milliseconds: 200),
+          child: child!,
+        ),
+        child: NavigationBar(
+          selectedIndex: _idx,
+          onDestinationSelected: (i) {
+            if (i != _idx) _uiVisible.value = true;
+            setState(() => _idx = i);
+          },
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
+            NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
+            NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
+          ],
+        ),
       ),
     );
   }
