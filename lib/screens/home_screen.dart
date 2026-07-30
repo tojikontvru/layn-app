@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -39,18 +40,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _showTimer?.cancel();
     _scrollCtrl.dispose();
     super.dispose();
   }
 
   // ═══ Scroll hide/show UI ═══
   bool _uiHiddenByScroll = false;
+  Timer? _showTimer;
 
   void _onScroll() {
     if (!_scrollCtrl.hasClients) return;
     final current = _scrollCtrl.position.pixels;
     final diff = current - _lastScrollOffset;
     _lastScrollOffset = current;
+
+    // Cancel pending show timer
+    _showTimer?.cancel();
 
     // Scroll DOWN (content goes up) → hide
     if (diff > 8 && current > 80) {
@@ -59,9 +65,11 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.uiVisible?.value = false;
         if (mounted) setState(() => _categoryVisible = false);
       }
+      return;
     }
-    // Scroll UP (content comes down) → show
-    else if (diff < -8) {
+
+    // Scroll UP (content comes down) → show immediately
+    if (diff < -8) {
       if (_uiHiddenByScroll) {
         _uiHiddenByScroll = false;
         widget.uiVisible?.value = true;
@@ -75,13 +83,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Called when scrolling stops → show UI again
+  /// Smooth show after scroll stops (debounced 150ms)
   void _onScrollEnd() {
-    if (_uiHiddenByScroll) {
-      _uiHiddenByScroll = false;
-      widget.uiVisible?.value = true;
-      if (mounted) setState(() => _categoryVisible = true);
-    }
+    _showTimer?.cancel();
+    _showTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      if (_uiHiddenByScroll) {
+        _uiHiddenByScroll = false;
+        widget.uiVisible?.value = true;
+        setState(() => _categoryVisible = true);
+      }
+    });
   }
 
   Future<void> _loadAll() async {

@@ -208,26 +208,43 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_idx],
-      bottomNavigationBar: ValueListenableBuilder<bool>(
+      body: ValueListenableBuilder<bool>(
         valueListenable: _uiVisible,
-        builder: (context, visible, child) => AnimatedSlide(
-          offset: Offset(0, visible ? 0 : 1),
-          duration: const Duration(milliseconds: 200),
-          child: child!,
-        ),
-        child: NavigationBar(
-          selectedIndex: _idx,
-          onDestinationSelected: (i) {
-            if (i != _idx) _uiVisible.value = true;
-            setState(() => _idx = i);
-          },
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
-            NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
-            NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
+        builder: (context, visible, _) => Stack(
+          children: [
+            // Body content — bottom padding animates to fill freed space
+            AnimatedPadding(
+              padding: EdgeInsets.only(bottom: visible ? kBottomNavigationBarHeight : 0),
+              duration: const Duration(milliseconds: 200),
+              child: IndexedStack(
+                index: _idx,
+                children: _screens,
+              ),
+            ),
+            // Navigation bar — overlaid, slides down/up, no bg leftover
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedSlide(
+                offset: Offset(0, visible ? 0 : 1),
+                duration: const Duration(milliseconds: 200),
+                child: NavigationBar(
+                  selectedIndex: _idx,
+                  onDestinationSelected: (i) {
+                    if (i != _idx) _uiVisible.value = true;
+                    setState(() => _idx = i);
+                  },
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                  indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                  destinations: const [
+                    NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
+                    NavigationDestination(icon: Icon(Icons.search), selectedIcon: Icon(Icons.search), label: 'Поиск'),
+                    NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Профиль'),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
