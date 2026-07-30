@@ -32,9 +32,13 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
 
   // Video
   VideoPlayerController? _vpc;
+  int? _currentVideoIndex;  // which index _vpc corresponds to
   bool _isPlaying = false;
   bool _isInitialized = false;
   bool _isMuted = false;
+
+  // Controller cache for scrolling back
+  final Map<int, VideoPlayerController> _controllerCache = {};
 
   // Race condition protection
   int _requestId = 0;
@@ -203,7 +207,17 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     final currentRequestId = ++_requestId;
 
     _progressTimer?.cancel();
-    _vpc?.dispose();
+
+    // Cache current controller instead of disposing — enables scroll-back
+    if (_vpc != null && _currentVideoIndex != null) {
+      // Dispose any stale cache entry before overwriting
+      _controllerCache[_currentVideoIndex!]?.dispose();
+      _controllerCache[_currentVideoIndex!] = _vpc!;
+      _vpc = null;
+    } else {
+      _vpc?.dispose();
+      _vpc = null;
+    }
 
     // Dispose stale prefetches if they are for a different index
     if (_prefetchedForIndex != index && _prefetchedVpc != null) {
@@ -252,7 +266,19 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         myVpc = _prefetchedVpc2;
         _prefetchedVpc2 = null;
         _prefetchedForIndex2 = null;
-      } else {
+      } else if (_controllerCache.containsKey(index)) {
+        // Reuse cached controller — avoids reload when scrolling back
+        try {
+          myVpc = _controllerCache.remove(index)!;
+          await myVpc.seekTo(Duration.zero);
+        } catch (_) {
+          // Cached controller is in bad state, create fresh one
+          myVpc?.dispose();
+          _controllerCache.remove(index);
+        }
+      }
+
+      if (myVpc == null) {
         final controller = VideoPlayerController.networkUrl(Uri.parse(url));
         await controller.initialize().timeout(const Duration(seconds: 8));
 
@@ -298,6 +324,10 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
 
       if (!mounted) return;
       setState(() { _isInitialized = true; _isPlaying = true; });
+      _currentVideoIndex = index;
+
+      // Clean up cache entries that are too far away (>2 indices)
+      _controllerCache.removeWhere((key, _) => (key - index).abs() > 2);
 
       // Prefetch next video
       _prefetchNext();
@@ -401,6 +431,9 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     _vpc?.dispose();
     _prefetchedVpc?.dispose();
     _prefetchedVpc2?.dispose();
+    for (final c in _controllerCache.values) {
+      c.dispose();
+    }
     _pageController.dispose();
     WakelockPlus.disable();
     super.dispose();
