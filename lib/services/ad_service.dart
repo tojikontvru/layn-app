@@ -13,7 +13,7 @@ class AdService extends ChangeNotifier {
   String? _yandexInterstitialUnitId;
   String? _yandexRewardedUnitId;
   bool _yandexActive = false;
-  bool _yandexTestMode = true;
+  bool _yandexTestMode = false;
 
   bool _initialized = false;
 

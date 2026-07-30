@@ -42,6 +42,8 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
   // Prefetch
   VideoPlayerController? _prefetchedVpc;
   int? _prefetchedForIndex;
+  VideoPlayerController? _prefetchedVpc2;
+  int? _prefetchedForIndex2;
 
   // Error state
   bool _initFailed = false;
@@ -139,17 +141,30 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
   }
 
   Future<void> _prefetchNext() async {
-    final nextIndex = _currentIndex + 1;
-    if (nextIndex < 0 || nextIndex >= _shorts.length) return;
-    if (_prefetchedForIndex == nextIndex && _prefetchedVpc != null) return;
+    // Prefetch slot 1: next video (current + 1)
+    await _prefetchSlot(_currentIndex + 1, 1);
 
-    // Mark this prefetch request immediately so concurrent calls can self-cancel
-    _prefetchedForIndex = nextIndex;
+    // Prefetch slot 2: one more ahead (current + 2) — depth 2
+    if (_currentIndex + 2 < _shorts.length) {
+      _prefetchSlot(_currentIndex + 2, 2);
+    }
+  }
 
-    final url = abs(_shorts[nextIndex].videoUrl);
-    if (url.isEmpty) {
-      _prefetchedForIndex = null;
-      return;
+  Future<void> _prefetchSlot(int targetIndex, int slot) async {
+    if (targetIndex < 0 || targetIndex >= _shorts.length) return;
+
+    final forIndex = slot == 1 ? _prefetchedForIndex : _prefetchedForIndex2;
+    final vpc = slot == 1 ? _prefetchedVpc : _prefetchedVpc2;
+    if (forIndex == targetIndex && vpc != null) return;
+
+    final url = abs(_shorts[targetIndex].videoUrl);
+    if (url.isEmpty) return;
+
+    // Mark this prefetch request immediately
+    if (slot == 1) {
+      _prefetchedForIndex = targetIndex;
+    } else {
+      _prefetchedForIndex2 = targetIndex;
     }
 
     try {
@@ -157,20 +172,27 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
       await controller.initialize().timeout(const Duration(seconds: 10));
       if (!mounted) {
         controller.dispose();
-        _prefetchedForIndex = null;
+        if (slot == 1) _prefetchedForIndex = null;
+        else _prefetchedForIndex2 = null;
         return;
       }
 
       // Only keep if this prefetch is still the requested one
-      if (_prefetchedForIndex == nextIndex) {
-        _prefetchedVpc?.dispose();
-        _prefetchedVpc = controller;
+      final currentForIndex = slot == 1 ? _prefetchedForIndex : _prefetchedForIndex2;
+      if (currentForIndex == targetIndex) {
+        if (slot == 1) {
+          _prefetchedVpc?.dispose();
+          _prefetchedVpc = controller;
+        } else {
+          _prefetchedVpc2?.dispose();
+          _prefetchedVpc2 = controller;
+        }
       } else {
         controller.dispose();
       }
     } catch (_) {
-      // Silently ignore prefetch failures
-      _prefetchedForIndex = null;
+      if (slot == 1) _prefetchedForIndex = null;
+      else _prefetchedForIndex2 = null;
     }
   }
 
@@ -183,11 +205,16 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     _progressTimer?.cancel();
     _vpc?.dispose();
 
-    // Dispose stale prefetch if it is for a different index
+    // Dispose stale prefetches if they are for a different index
     if (_prefetchedForIndex != index && _prefetchedVpc != null) {
       _prefetchedVpc?.dispose();
       _prefetchedVpc = null;
       _prefetchedForIndex = null;
+    }
+    if (_prefetchedForIndex2 != index && _prefetchedVpc2 != null) {
+      _prefetchedVpc2?.dispose();
+      _prefetchedVpc2 = null;
+      _prefetchedForIndex2 = null;
     }
 
     final url = abs(_shorts[index].videoUrl);
@@ -221,6 +248,10 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
         myVpc = _prefetchedVpc;
         _prefetchedVpc = null;
         _prefetchedForIndex = null;
+      } else if (_prefetchedForIndex2 == index && _prefetchedVpc2 != null) {
+        myVpc = _prefetchedVpc2;
+        _prefetchedVpc2 = null;
+        _prefetchedForIndex2 = null;
       } else {
         final controller = VideoPlayerController.networkUrl(Uri.parse(url));
         await controller.initialize().timeout(const Duration(seconds: 8));
@@ -369,6 +400,7 @@ class _ShortsScreenState extends State<ShortsScreen> with WidgetsBindingObserver
     _progressTimer?.cancel();
     _vpc?.dispose();
     _prefetchedVpc?.dispose();
+    _prefetchedVpc2?.dispose();
     _pageController.dispose();
     WakelockPlus.disable();
     super.dispose();
