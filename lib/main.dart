@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -193,24 +195,25 @@ class _MainScreenState extends State<MainScreen> {
   int _idx = 0;
   final ValueNotifier<bool> _uiVisible = ValueNotifier(true);
 
+  final _searchKey = GlobalKey<SearchScreenState>();
+
   final _screens = [
     HomeScreen(),
     SearchScreen(),
     ProfileScreen(),
   ];
 
-  // Warm dark nav bar colors (matching screenshot)
-  static const _navBgTop = Color(0xFF28221E);
-  static const _navBgBottom = Color(0xFF181412);
-  static const _navActiveColor = Color(0xFFE6D3BA);  // warm beige active
-  static const _navInactiveColor = Color(0xFF8A7C6C); // muted warm inactive
-  static const _navBarHeight = 72.0;
+  // iOS floating tab bar colors
+  static const _navActiveColor = Color(0xFFE6D3BA);   // warm beige active
+  static const _navInactiveColor = Color(0xFF8A7C6C);  // muted warm inactive
+  static const _navBarHeight = 62.0;
 
   @override
   void initState() {
     super.initState();
     // Set up HomeScreen with scroll visibility
     _screens[0] = HomeScreen(uiVisible: _uiVisible);
+    _screens[1] = SearchScreen(key: _searchKey);
     // Check for app updates on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       UpdateService.checkForUpdates(context);
@@ -220,31 +223,33 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    final totalNavH = _navBarHeight + bottomInset;
+    final tabMargin = 24.0;
+    final bottomMargin = 16.0 + bottomInset;
+    final tabWidth = MediaQuery.of(context).size.width - tabMargin * 2;
 
     return Scaffold(
       body: ValueListenableBuilder<bool>(
         valueListenable: _uiVisible,
         builder: (context, visible, _) => Stack(
           children: [
-            // Body content — bottom padding animates to fill freed space
+            // Body content — bottom padding для плавающего бара
             AnimatedPadding(
-              padding: EdgeInsets.only(bottom: visible ? totalNavH : 0),
+              padding: EdgeInsets.only(bottom: visible ? bottomMargin + _navBarHeight + 8 : 0),
               duration: const Duration(milliseconds: 200),
               child: IndexedStack(
                 index: _idx,
                 children: _screens,
               ),
             ),
-            // Navigation bar — кастомное, как на скриншоте
+            // Floating iOS-style tab bar — капсула с blur, не на всю ширину
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
+              left: tabMargin,
+              right: tabMargin,
+              bottom: bottomMargin,
               child: AnimatedSlide(
-                offset: Offset(0, visible ? 0 : 1),
+                offset: Offset(0, visible ? 0 : 1.5),
                 duration: const Duration(milliseconds: 200),
-                child: _buildNavBar(totalNavH),
+                child: _buildFloatingNavBar(tabWidth),
               ),
             ),
           ],
@@ -253,28 +258,41 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  /// Custom bottom nav bar — warm dark gradient, как на скриншоте
-  Widget _buildNavBar(double totalHeight) {
+  /// iOS floating tab bar — закруглённая капсула с blur, парит над контентом
+  Widget _buildFloatingNavBar(double width) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      height: totalHeight,
+      width: width,
+      height: _navBarHeight,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: isDark
-              ? [_navBgTop, _navBgBottom]
-              : [Colors.white, Colors.grey.shade100],
-        ),
+        borderRadius: BorderRadius.circular(34),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            _navItem(0, Icons.home_outlined, Icons.home, 'Главная'),
-            _navItem(1, Icons.search, Icons.search, 'Поиск'),
-            _navItem(2, Icons.person_outline, Icons.person, 'Профиль'),
-          ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(34),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: Container(
+            color: isDark
+                ? const Color(0xBB1C1814) // полупрозрачный тёмный
+                : const Color(0xDDEEEDE8), // полупрозрачный светлый
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  _navItem(0, Icons.home_outlined, Icons.home, 'Главная'),
+                  _navItem(1, Icons.search, Icons.search, 'Поиск'),
+                  _navItem(2, Icons.person_outline, Icons.person, 'Профиль'),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -291,6 +309,9 @@ class _MainScreenState extends State<MainScreen> {
         onTap: () {
           if (index != _idx) _uiVisible.value = true;
           setState(() => _idx = index);
+          if (index == 1) {
+            _searchKey.currentState?.focusSearch();
+          }
         },
         child: Column(
           mainAxisSize: MainAxisSize.min,

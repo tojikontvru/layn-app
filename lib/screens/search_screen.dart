@@ -7,15 +7,22 @@ import 'video_screen.dart';
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  State<SearchScreen> createState() => SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class SearchScreenState extends State<SearchScreen> {
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
   List<Video> _results = [];
   bool _searched = false;
   bool _loading = false;
+
+  /// Вызывается из MainScreen при переключении на вкладку поиска
+  void focusSearch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
 
   Future<void> _search(String q) async {
     if (q.trim().isEmpty) return;
