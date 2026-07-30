@@ -70,6 +70,11 @@ class _LaynAppState extends State<LaynApp> {
   @override
   void initState() {
     super.initState();
+    // Прозрачная системная навигация — наш градиент виден до самого низа
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+    ));
     _api = ApiService.instance;
     _auth = AuthProvider(_api);
     _initAsync();
@@ -214,6 +219,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final totalNavH = _navBarHeight + bottomInset;
+
     return Scaffold(
       body: ValueListenableBuilder<bool>(
         valueListenable: _uiVisible,
@@ -221,7 +229,7 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             // Body content — bottom padding animates to fill freed space
             AnimatedPadding(
-              padding: EdgeInsets.only(bottom: visible ? _navBarHeight : 0),
+              padding: EdgeInsets.only(bottom: visible ? totalNavH : 0),
               duration: const Duration(milliseconds: 200),
               child: IndexedStack(
                 index: _idx,
@@ -236,7 +244,7 @@ class _MainScreenState extends State<MainScreen> {
               child: AnimatedSlide(
                 offset: Offset(0, visible ? 0 : 1),
                 duration: const Duration(milliseconds: 200),
-                child: _buildNavBar(),
+                child: _buildNavBar(totalNavH),
               ),
             ),
           ],
@@ -246,10 +254,10 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Custom bottom nav bar — warm dark gradient, как на скриншоте
-  Widget _buildNavBar() {
+  Widget _buildNavBar(double totalHeight) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      height: _navBarHeight,
+      height: totalHeight,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
