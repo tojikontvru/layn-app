@@ -262,6 +262,7 @@ class _MainScreenState extends State<MainScreen> {
   /// iOS floating tab bar — закруглённая капсула с blur, парит над контентом
   Widget _buildFloatingNavBar(double width) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconSize = 26.0;
     return Container(
       width: width,
       height: _navBarHeight,
@@ -281,17 +282,14 @@ class _MainScreenState extends State<MainScreen> {
           filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
           child: Container(
             color: isDark
-                ? const Color(0xBB1C1814) // полупрозрачный тёмный
-                : const Color(0xDDEEEDE8), // полупрозрачный светлый
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  _navItem(0, Icons.home_outlined, Icons.home, 'Главная'),
-                  _navItem(1, Icons.search_outlined, Icons.search, 'Поиск'),  // ✅ outlined как все
-                  _navItem(2, Icons.person_outline, Icons.person, 'Профиль'),
-                ],
-              ),
+                ? const Color(0xBB1C1814)
+                : const Color(0xDDEEEDE8),
+            child: Row(
+              children: [
+                _navItem(0, Icons.home_outlined, Icons.home, 'Главная', iconSize),
+                _navItem(1, Icons.search_outlined, Icons.search, 'Поиск', iconSize),
+                _navItem(2, Icons.person_outline, Icons.person, 'Профиль', iconSize),
+              ],
             ),
           ),
         ),
@@ -299,14 +297,15 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _navItem(int index, IconData icon, IconData selectedIcon, String label) {
+  Widget _navItem(int index, IconData icon, IconData selectedIcon, String label, double iconSize) {
     final selected = _idx == index;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeColor = isDark ? _navActiveColor : Colors.black;
     final inactiveColor = isDark ? _navInactiveColor : Colors.grey.shade500;
 
     return Expanded(
-      child: GestureDetector(  // ✅ GestureDetector вместо InkWell — не зависает
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () {
           if (index != _idx) _uiVisible.value = true;
           setState(() => _idx = index);
@@ -314,26 +313,29 @@ class _MainScreenState extends State<MainScreen> {
             _searchKey.currentState?.focusSearch();
           }
         },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              selected ? selectedIcon : icon,
-              color: selected ? activeColor : inactiveColor,
-              size: 25,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
+        child: Container(
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                selected ? selectedIcon : icon,
                 color: selected ? activeColor : inactiveColor,
-                fontSize: 10.5,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                letterSpacing: 0.2,
+                size: iconSize,
               ),
-            ),
-          ],
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? activeColor : inactiveColor,
+                  fontSize: 10.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
