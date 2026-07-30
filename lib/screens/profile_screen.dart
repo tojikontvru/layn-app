@@ -21,7 +21,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    return auth.isAuth ? _buildLoggedin(auth) : _buildGuest();
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: auth.isAuth ? _buildLoggedin(auth) : _buildGuest(),
+    );
   }
 
   // === GUEST VIEW ===

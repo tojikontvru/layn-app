@@ -227,31 +227,34 @@ class _MainScreenState extends State<MainScreen> {
     final bottomMargin = 16.0 + bottomInset;
     final tabWidth = MediaQuery.of(context).size.width - tabMargin * 2;
 
-    return ValueListenableBuilder<bool>(
-      valueListenable: _uiVisible,
-      builder: (context, visible, _) => Stack(
-        children: [
-          // Body content — bottom padding для плавающего бара
-          AnimatedPadding(
-            padding: EdgeInsets.only(bottom: visible ? bottomMargin + _navBarHeight + 8 : 0),
-            duration: const Duration(milliseconds: 200),
-            child: IndexedStack(
-              index: _idx,
-              children: _screens,
-            ),
-          ),
-          // Floating iOS-style tab bar — капсула с blur, не на всю ширину
-          Positioned(
-            left: tabMargin,
-            right: tabMargin,
-            bottom: bottomMargin,
-            child: AnimatedSlide(
-              offset: Offset(0, visible ? 0 : 1.5),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: ValueListenableBuilder<bool>(
+        valueListenable: _uiVisible,
+        builder: (context, visible, _) => Stack(
+          children: [
+            // Body content — bottom padding для плавающего бара
+            AnimatedPadding(
+              padding: EdgeInsets.only(bottom: visible ? bottomMargin + _navBarHeight + 8 : 0),
               duration: const Duration(milliseconds: 200),
-              child: _buildFloatingNavBar(tabWidth),
+              child: IndexedStack(
+                index: _idx,
+                children: _screens,
+              ),
             ),
-          ),
-        ],
+            // Floating iOS-style tab bar — капсула с blur, не на всю ширину
+            Positioned(
+              left: tabMargin,
+              right: tabMargin,
+              bottom: bottomMargin,
+              child: AnimatedSlide(
+                offset: Offset(0, visible ? 0 : 1.5),
+                duration: const Duration(milliseconds: 200),
+                child: _buildFloatingNavBar(tabWidth),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
