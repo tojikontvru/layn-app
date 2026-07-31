@@ -1,198 +1,79 @@
-import 'dart:async';
-import 'dart:ui' show ImageFilter;
+// lib/main.dart — MainScreen + нижняя капсула (плавающая панель)
+
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'services/api_service.dart';
-import 'services/ad_service.dart';
-import 'services/update_service.dart';
-import 'providers/auth_provider.dart';
-import 'providers/theme_provider.dart';
-import 'screens/home_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/profile_screen.dart';
+import 'package:layn_app/providers/theme_provider.dart';
+import 'package:layn_app/screens/home_screen.dart';
+import 'package:layn_app/screens/search_screen.dart';
+import 'package:layn_app/screens/profile_screen.dart';
+import 'package:layn_app/screens/upload_screen.dart';
+import 'package:layn_app/widgets/update_dialog.dart';
+import 'package:layn_app/services/update_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
-  runApp(const LaynApp());
+  runApp(const MyApp());
 }
 
-class LaynApp extends StatefulWidget {
-  const LaynApp({super.key});
-
-  @override
-  State<LaynApp> createState() => _LaynAppState();
-}
-
-class _LaynAppState extends State<LaynApp> {
-  bool _ready = false;
-  late final ApiService _api;
-  late final AuthProvider _auth;
-
-  static const _primaryColor = Color(0xFF065FD4);
-  static const _bgLight = Colors.white;
-  static const _bgDark = Color(0xFF0F0F0F);
-
-  ThemeData get _lightTheme => ThemeData(
-        brightness: Brightness.light,
-        colorSchemeSeed: _primaryColor,
-        useMaterial3: true,
-        scaffoldBackgroundColor: _bgLight,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: _bgLight,
-          foregroundColor: Colors.black,
-          elevation: 0,
-        ),
-      );
-
-  ThemeData get _darkTheme => ThemeData(
-        brightness: Brightness.dark,
-        colorSchemeSeed: const Color(0xFF3EA6FF),
-        useMaterial3: true,
-        scaffoldBackgroundColor: _bgDark,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: _bgDark,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-      );
-
-  @override
-  void initState() {
-    super.initState();
-    // Прозрачная системная навигация — наш градиент виден до самого низа
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-    ));
-    _api = ApiService.instance;
-    _auth = AuthProvider(_api);
-    _initAsync();
-  }
-
-  Future<void> _initAsync() async {
-    // Pre-fetch home data while showing splash screen
-    await Future.wait([
-      _auth.init(),
-      _prefetchHomeData(),
-    ]);
-    if (!mounted) return;
-    setState(() => _ready = true);
-
-    // Lazy-init ads after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AdService().init();
-    });
-  }
-
-  /// Pre-fetch data into ApiService cache so HomeScreen loads instantly
-  Future<void> _prefetchHomeData() async {
-    try {
-      // Fire these into cache — HomeScreen will use same cache
-      await Future.wait([
-        _api.home(page: 1, category: null),
-        _api.categories(),
-      ]);
-    } catch (_) {
-      // Pre-fetch failures are OK, HomeScreen will fetch again
-    }
-  }
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (!_ready) {
-      return MaterialApp(
-        title: 'Layn',
-        debugShowCheckedModeBanner: false,
-        theme: _lightTheme,
-        home: const _SplashScreen(),
-      );
-    }
-
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider.value(value: _auth),
-        Provider.value(value: _api),
-      ],
+    return ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
       child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
-          // Синхронизируем иконки системной навигации с темой приложения,
-          // чтобы Android не рисовал контрастный тёмный скрим под капсулой
-          final isDark = themeProvider.themeMode == ThemeMode.dark;
+        builder: (context, themeProvider, child) {
+          final isDark = themeProvider.isDarkMode;
+          
+          // ✅ Делаем навигационную панель прозрачной и отключаем принудительный контраст Android
           SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-            systemNavigationBarColor: isDark ? const Color(0xFF0F0F0F) : Colors.white,
+            systemNavigationBarColor: Colors.transparent,
             systemNavigationBarDividerColor: Colors.transparent,
             systemNavigationBarIconBrightness:
                 isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarContrastEnforced: false, // Отключает затемнение на Android 10+
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
             statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
           ));
+
           return MaterialApp(
             title: 'Layn',
             debugShowCheckedModeBanner: false,
-            themeMode: themeProvider.themeMode,
-            theme: _lightTheme,
-            darkTheme: _darkTheme,
+            theme: ThemeData(
+              brightness: Brightness.light,
+              primaryColor: const Color(0xFF065FD4),
+              scaffoldBackgroundColor: Colors.white,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF065FD4),
+                brightness: Brightness.light,
+              ),
+              appBarTheme: const AppBarTheme(
+                backgroundColor: Colors.white,
+                elevation: 0,
+              ),
+            ),
+            darkTheme: ThemeData(
+              brightness: Brightness.dark,
+              primaryColor: const Color(0xFF065FD4),
+              scaffoldBackgroundColor: const Color(0xFF0F0F0F),
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF065FD4),
+                brightness: Brightness.dark,
+              ),
+              appBarTheme: const AppBarTheme(
+                backgroundColor: Color(0xFF0F0F0F),
+                elevation: 0,
+              ),
+            ),
+            themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
             home: const MainScreen(),
           );
         },
-      ),
-    );
-  }
-}
-
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF0F0F0F)
-          : Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.play_circle_fill,
-              size: 64,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Layn',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -205,151 +86,153 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
-  int _idx = 0;
-  final ValueNotifier<bool> _uiVisible = ValueNotifier(true);
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  int _currentIndex = 0;
+  bool _navVisible = true;
+  final double _navBarHeight = 62;
+  final UpdateService _updateService = UpdateService();
 
-  final _searchKey = GlobalKey<SearchScreenState>();
-
-  final _screens = [
+  final List<Widget> _screens = const [
     HomeScreen(),
     SearchScreen(),
+    UploadScreen(),
     ProfileScreen(),
   ];
-
-  // iOS floating tab bar colors
-  static const _navActiveColor = Color(0xFFE6D3BA);   // warm beige active
-  static const _navInactiveColor = Color(0xFF8A7C6C);  // muted warm inactive
-  static const _navBarHeight = 62.0;
 
   @override
   void initState() {
     super.initState();
-    // Set up HomeScreen with scroll visibility
-    _screens[0] = HomeScreen(uiVisible: _uiVisible);
-    _screens[1] = SearchScreen(key: _searchKey);
-    // Check for app updates on startup
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      UpdateService.checkForUpdates(context);
-    });
+    WidgetsBinding.instance.addObserver(this);
+    _checkUpdate();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _checkUpdate() async {
+    final result = await _updateService.checkForUpdate();
+    if (result != null && mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: !result['force'],
+        builder: (_) => UpdateDialog(
+          version: result['version'] ?? '',
+          changelog: result['changelog'] ?? '',
+          force: result['force'] ?? false,
+        ),
+      );
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    setState(() {});
+  }
+
+  void _onNavChanged(int index) {
+    setState(() => _currentIndex = index);
   }
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    final tabMargin = 24.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+    const tabMargin = 24.0;
     final bottomMargin = 16.0 + bottomInset;
-    final tabWidth = MediaQuery.of(context).size.width - tabMargin * 2;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: ValueListenableBuilder<bool>(
-        valueListenable: _uiVisible,
-        builder: (context, visible, _) => Stack(
-          children: [
-            // Body content — bottom padding для плавающего бара
-            AnimatedPadding(
-              padding: EdgeInsets.only(bottom: visible ? bottomMargin + _navBarHeight + 8 : 0),
-              duration: const Duration(milliseconds: 200),
-              child: IndexedStack(
-                index: _idx,
-                children: _screens,
-              ),
+      body: Stack(
+        children: [
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 200),
+            padding: EdgeInsets.only(
+              bottom: _navVisible ? bottomMargin + _navBarHeight + 8 : 0,
             ),
-            // Floating iOS-style tab bar — капсула с blur, не на всю ширину
-            Positioned(
-              left: tabMargin,
-              right: tabMargin,
-              bottom: bottomMargin,
-              child: AnimatedSlide(
-                offset: Offset(0, visible ? 0 : 1.5),
-                duration: const Duration(milliseconds: 200),
-                child: _buildFloatingNavBar(tabWidth),
-              ),
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _screens,
             ),
-          ],
-        ),
+          ),
+          Positioned(
+            left: tabMargin,
+            right: tabMargin,
+            bottom: bottomMargin,
+            child: _buildFloatingNavBar(screenWidth, tabMargin),
+          ),
+        ],
       ),
     );
   }
 
-  /// iOS floating tab bar — закруглённая капсула с blur, парит над контентом
-  Widget _buildFloatingNavBar(double width) {
+  Widget _buildFloatingNavBar(double screenWidth, double tabMargin) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final iconSize = 26.0;
+    final tabWidth = (screenWidth - tabMargin * 2) / _screens.length;
+
     return Container(
-      width: width,
       height: _navBarHeight,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(34),
+        color: isDark
+            ? const Color(0xBB1C1814)
+            : const Color(0xDDEEEDE8),
+        borderRadius: BorderRadius.circular(31),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: isDark ? Colors.black26 : Colors.black12,
+            blurRadius: 20,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(34),
+        borderRadius: BorderRadius.circular(31),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-          child: Container(
-            color: isDark
-                ? const Color(0xBB1C1814)
-                : const Color(0xDDEEEDE8),
-            child: Row(
-              children: [
-                _navItem(0, Icons.home_outlined, Icons.home, 'Главная', iconSize),
-                _navItem(1, Icons.search_outlined, Icons.search, 'Поиск', iconSize),
-                _navItem(2, Icons.person_outline, Icons.person, 'Профиль', iconSize),
-              ],
-            ),
+          child: Row(
+            children: [
+              _navItem(0, Icons.home_outlined, Icons.home, 'Главная', tabWidth),
+              _navItem(1, Icons.search_outlined, Icons.search, 'Поиск', tabWidth),
+              _navItem(2, Icons.add_circle_outline, Icons.add_circle, 'Загрузить', tabWidth),
+              _navItem(3, Icons.person_outline, Icons.person, 'Профиль', tabWidth),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _navItem(int index, IconData icon, IconData selectedIcon, String label, double iconSize) {
-    final selected = _idx == index;
+  Widget _navItem(int index, IconData icon, IconData activeIcon, String label, double width) {
+    final isSelected = _currentIndex == index;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeColor = isDark ? _navActiveColor : Colors.black;
-    final inactiveColor = isDark ? _navInactiveColor : Colors.grey.shade500;
+    final color = isSelected
+        ? const Color(0xFF065FD4)
+        : isDark
+            ? Colors.white54
+            : Colors.black54;
 
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (index != _idx) _uiVisible.value = true;
-          setState(() => _idx = index);
-          if (index == 1) {
-            _searchKey.currentState?.focusSearch();
-          }
-        },
-        child: Container(
-          alignment: Alignment.center,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                selected ? selectedIcon : icon,
-                color: selected ? activeColor : inactiveColor,
-                size: iconSize,
+    return GestureDetector(
+      onTap: () => _onNavChanged(index),
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: width,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(isSelected ? activeIcon : icon, color: color, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: color,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? activeColor : inactiveColor,
-                  fontSize: 10.5,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
