@@ -45,12 +45,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF0F0F0F) : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final fieldBg = isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF2F2F2);
+    final iconColor = isDark ? const Color(0xFF6C5CE7) : Colors.grey.shade700;
+    final primary = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bg,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Регистрация', style: TextStyle(color: Colors.white)),
+        backgroundColor: bg,
+        iconTheme: IconThemeData(color: textColor),
+        title: Text('Регистрация', style: TextStyle(color: textColor)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -59,23 +66,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
             key: _formKey,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               const SizedBox(height: 20),
-              const Icon(Icons.person_add_outlined, color: Color(0xFF6C5CE7), size: 64),
+              Icon(Icons.person_add_outlined, color: iconColor, size: 64),
               const SizedBox(height: 24),
-              const Text('Создайте аккаунт', textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+              Text('Создайте аккаунт', textAlign: TextAlign.center,
+                  style: TextStyle(color: textColor, fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 32),
               TextFormField(
                 controller: _usernameCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Имя пользователя', Icons.person_outline),
+                style: TextStyle(color: textColor),
+                decoration: _inputDecoration('Имя пользователя', Icons.person_outline, fieldBg, isDark),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Введите имя пользователя' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Email', Icons.email_outlined),
+                style: TextStyle(color: textColor),
+                decoration: _inputDecoration('Email', Icons.email_outlined, fieldBg, isDark),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Введите email';
                   if (!v.contains('@')) return 'Некорректный email';
@@ -85,15 +92,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _nameCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Имя', Icons.badge_outlined),
+                style: TextStyle(color: textColor),
+                decoration: _inputDecoration('Имя', Icons.badge_outlined, fieldBg, isDark),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _passwordCtrl,
                 obscureText: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Пароль', Icons.lock_outline),
+                style: TextStyle(color: textColor),
+                decoration: _inputDecoration('Пароль', Icons.lock_outline, fieldBg, isDark),
                 validator: (v) => (v == null || v.length < 6) ? 'Минимум 6 символов' : null,
               ),
               const SizedBox(height: 24),
@@ -106,7 +113,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               SizedBox(
                 height: 50,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
+                  style: FilledButton.styleFrom(backgroundColor: primary),
                   onPressed: _loading ? null : _register,
                   child: _loading
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
@@ -116,8 +123,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Уже есть аккаунт? Войти',
-                    style: TextStyle(color: Color(0xFF6C5CE7))),
+                child: Text('Уже есть аккаунт? Войти',
+                    style: TextStyle(color: primary)),
               ),
             ]),
           ),
@@ -126,14 +133,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData icon) => InputDecoration(
+  InputDecoration _inputDecoration(String label, IconData icon, Color fieldBg, bool isDark) => InputDecoration(
     labelText: label,
-    labelStyle: const TextStyle(color: Colors.grey),
-    prefixIcon: Icon(icon, color: Colors.grey),
+    labelStyle: TextStyle(color: isDark ? Colors.grey : Colors.grey.shade600),
+    prefixIcon: Icon(icon, color: isDark ? Colors.grey : Colors.grey.shade600),
     filled: true,
-    fillColor: const Color(0xFF1A1A1A),
+    fillColor: fieldBg,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF6C5CE7))),
+        borderSide: BorderSide(color: Theme.of(context).colorScheme.primary)),
   );
 }

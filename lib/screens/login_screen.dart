@@ -27,30 +27,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF0F0F0F) : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final fieldBg = isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF2F2F2);
+    final iconColor = isDark ? Colors.white24 : Colors.black38;
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bg,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Вход', style: TextStyle(color: Colors.white)),
+        backgroundColor: bg,
+        iconTheme: IconThemeData(color: textColor),
+        title: Text('Вход', style: TextStyle(color: textColor)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
           const SizedBox(height: 40),
-          const Icon(Icons.person, color: Colors.white24, size: 80),
+          Icon(Icons.person, color: iconColor, size: 80),
           const SizedBox(height: 40),
           TextField(
             controller: _u,
-            style: const TextStyle(color: Colors.white),
-            decoration: _deco('Логин', Icons.person_outline),
+            style: TextStyle(color: textColor),
+            decoration: _deco('Логин', Icons.person_outline, fieldBg, isDark),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _p,
             obscureText: true,
-            style: const TextStyle(color: Colors.white),
-            decoration: _deco('Пароль', Icons.lock_outline),
+            style: TextStyle(color: textColor),
+            decoration: _deco('Пароль', Icons.lock_outline, fieldBg, isDark),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -61,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
             height: 50,
             child: FilledButton(
               onPressed: _loading ? null : _login,
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6C5CE7)),
+              style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary),
               child: _loading
                   ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Text('Войти', style: TextStyle(fontSize: 16)),
@@ -72,23 +78,23 @@ class _LoginScreenState extends State<LoginScreen> {
             onPressed: () {
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const RegisterScreen()));
             },
-            child: const Text('Нет аккаунта? Зарегистрироваться',
-                style: TextStyle(color: Color(0xFF6C5CE7))),
+            child: Text('Нет аккаунта? Зарегистрироваться',
+                style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           ),
         ],
       ),
     );
   }
 
-  InputDecoration _deco(String label, IconData icon) => InputDecoration(
+  InputDecoration _deco(String label, IconData icon, Color fieldBg, bool isDark) => InputDecoration(
     labelText: label,
-    labelStyle: const TextStyle(color: Colors.grey),
-    prefixIcon: Icon(icon, color: Colors.grey),
+    labelStyle: TextStyle(color: isDark ? Colors.grey : Colors.grey.shade600),
+    prefixIcon: Icon(icon, color: isDark ? Colors.grey : Colors.grey.shade600),
     filled: true,
-    fillColor: const Color(0xFF1A1A1A),
+    fillColor: fieldBg,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF6C5CE7))),
+        borderSide: BorderSide(color: Theme.of(context).colorScheme.primary)),
   );
 
   @override
