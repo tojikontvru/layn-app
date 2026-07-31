@@ -128,14 +128,28 @@ class _LaynAppState extends State<LaynApp> {
         Provider.value(value: _api),
       ],
       child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) => MaterialApp(
-          title: 'Layn',
-          debugShowCheckedModeBanner: false,
-          themeMode: themeProvider.themeMode,
-          theme: _lightTheme,
-          darkTheme: _darkTheme,
-          home: const MainScreen(),
-        ),
+        builder: (context, themeProvider, _) {
+          // Синхронизируем иконки системной навигации с темой приложения,
+          // чтобы Android не рисовал контрастный тёмный скрим под капсулой
+          final isDark = themeProvider.themeMode == ThemeMode.dark;
+          SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+            systemNavigationBarColor: isDark ? const Color(0xFF0F0F0F) : Colors.white,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+            statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+          ));
+          return MaterialApp(
+            title: 'Layn',
+            debugShowCheckedModeBanner: false,
+            themeMode: themeProvider.themeMode,
+            theme: _lightTheme,
+            darkTheme: _darkTheme,
+            home: const MainScreen(),
+          );
+        },
       ),
     );
   }
