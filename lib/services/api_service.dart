@@ -289,6 +289,23 @@ class ApiService {
     }
     return null;
   }
+
+  // === Notifications (лента новостей из админки) ===
+  Future<List<AppNotification>> notifications() async {
+    try {
+      final d = await get('/notifications', cache: false);
+      final data = d['data'];
+      final list = data is Map
+          ? (data['notifications'] as List? ?? [])
+          : (data is List ? data : []);
+      return list
+          .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('notifications error: $e');
+      return [];
+    }
+  }
 }
 
 

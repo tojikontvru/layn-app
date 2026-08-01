@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../widgets/video_card.dart';
 import '../widgets/ad_card.dart';
 import 'video_screen.dart';
+import 'notifications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final ValueNotifier<bool>? uiVisible;
@@ -220,7 +221,11 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: Icon(Icons.notifications_outlined,
                 color: theme.textTheme.titleMedium?.color, size: 26),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+              );
+            },
           ),
           const SizedBox(width: 4),
         ],

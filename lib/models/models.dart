@@ -153,9 +153,35 @@ class Category {
 }
 
 
-/// Ad model for in-app advertisements
-class Ad {
+/// Уведомление/новость из админки (push-рассылка)
+class AppNotification {
   final int id;
+  final String subject;
+  final String message;
+  final String? imageUrl;
+  final String createdAt;
+
+  AppNotification({
+    required this.id,
+    required this.subject,
+    this.message = '',
+    this.imageUrl,
+    this.createdAt = '',
+  });
+
+  String get image => imageUrl != null && imageUrl!.isNotEmpty ? abs(imageUrl!) : '';
+
+  factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
+        id: j['id'] ?? 0,
+        subject: j['subject']?.toString() ?? '',
+        message: j['message']?.toString() ?? '',
+        imageUrl: j['image']?.toString(),
+        createdAt: j['created_at']?.toString() ?? '',
+      );
+}
+
+/// Ad model for in-app advertisements
+class Ad {  final int id;
   final String type; // 'feed', 'shorts', 'player'
   final String title;
   final String description;
