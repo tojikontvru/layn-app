@@ -71,7 +71,13 @@ class _VideoScreenState extends State<VideoScreen>
 
   Future<void> _initVideo() async {
     try {
-      final url = abs(widget.video.videoUrl);
+      // HLS-стрим стартует мгновенно (маленький манифест + сегменты).
+      // Если сервер отдаёт HLS — используем его, иначе fallback на MP4.
+      final rawUrl = (widget.video.hlsUrl != null &&
+              widget.video.hlsUrl!.isNotEmpty)
+          ? widget.video.hlsUrl!
+          : widget.video.videoUrl;
+      final url = abs(rawUrl);
       if (url.isEmpty) {
         setState(() {
           _loading = false;
@@ -79,7 +85,14 @@ class _VideoScreenState extends State<VideoScreen>
         });
         return;
       }
-      _vpc = VideoPlayerController.networkUrl(Uri.parse(url));
+      // Создаём контроллер сразу при открытии экрана.
+      // httpHeaders можно использовать для авторизованных стримов
+      // (например, Bearer-токен), videoPlayerOptions — быстрый старт.
+      _vpc = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        httpHeaders: const {},
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
       await _vpc!.initialize();
       if (_disposed) return;
       _cc = ChewieController(
@@ -383,9 +396,27 @@ class _VideoScreenState extends State<VideoScreen>
             child: Column(
               children: [
                 if (_loading)
-                  const AspectRatio(
+                  AspectRatio(
                     aspectRatio: 16 / 9,
-                    child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Постер видео виден СРАЗУ, пока инициализируется плеер
+                        CachedNetworkImage(
+                          imageUrl: widget.video.thumb,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              Container(color: Colors.black),
+                          placeholder: (_, __) => Container(color: Colors.black),
+                        ),
+                        const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white70,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      ],
+                    ),
                   )
                 else if (_videoError != null)
                   AspectRatio(
