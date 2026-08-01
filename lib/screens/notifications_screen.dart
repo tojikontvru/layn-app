@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 import 'package:layn_app/models/models.dart';
 import 'package:layn_app/services/api_service.dart';
 
@@ -161,6 +162,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   /// Бабл поста — как в Telegram-канале
   Widget _buildBubble(AppNotification n, Color bubbleColor, bool isDark) {
     final hasImage = n.image.isNotEmpty;
+    final hasVideo = n.video.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Align(
@@ -187,7 +189,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (hasImage) ...[
+              if (hasVideo) ...[
+                _NotificationVideoPlayer(url: n.video),
+                const SizedBox(height: 10),
+              ] else if (hasImage) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Image.network(
@@ -287,5 +292,109 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Лёгкий видео-плеер для бабла уведомления: показывает постер-кнопку,
+/// по тапу запускает проигрывание (поток с сервера).
+class _NotificationVideoPlayer extends StatefulWidget {
+  final String url;
+  const _NotificationVideoPlayer({required this.url});
+
+  @override
+  State<_NotificationVideoPlayer> createState() => _NotificationVideoPlayerState();
+}
+
+class _NotificationVideoPlayerState extends State<_NotificationVideoPlayer> {
+  bool _playing = false;
+  bool _error = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: _playing
+            ? NotificationVideoView(
+                url: widget.url,
+                onError: () {
+                  if (mounted) setState(() => _error = true);
+                },
+              )
+            : InkWell(
+                onTap: () => setState(() => _playing = true),
+                child: Container(
+                  color: Colors.black,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _error ? Icons.error_outline : Icons.play_circle_fill,
+                          size: 56,
+                          color: _error ? Colors.white38 : Colors.white,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _error ? 'Не удалось воспроизвести' : 'Смотреть видео',
+                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Простое воспроизведение видео (без Chewie, чтобы не тянуть тяжёлые контролы).
+class NotificationVideoView extends StatefulWidget {
+  final String url;
+  final VoidCallback onError;
+  const NotificationVideoView({super.key, required this.url, required this.onError});
+
+  @override
+  State<NotificationVideoView> createState() => _NotificationVideoViewState();
+}
+
+class _NotificationVideoViewState extends State<NotificationVideoView> {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller.initialize().then((_) {
+      if (mounted) {
+        setState(() => _ready = true);
+        _controller.play();
+      }
+    }).catchError((_) {
+      widget.onError();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _ready
+        ? FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller.value.size.width,
+              height: _controller.value.size.height,
+              child: VideoPlayer(_controller),
+            ),
+          )
+        : Container(color: Colors.black);
   }
 }

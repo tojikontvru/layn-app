@@ -159,6 +159,7 @@ class AppNotification {
   final String subject;
   final String message;
   final String? imageUrl;
+  final String? videoUrl;
   final String createdAt;
 
   AppNotification({
@@ -166,16 +167,19 @@ class AppNotification {
     required this.subject,
     this.message = '',
     this.imageUrl,
+    this.videoUrl,
     this.createdAt = '',
   });
 
   String get image => imageUrl != null && imageUrl!.isNotEmpty ? abs(imageUrl!) : '';
+  String get video => videoUrl != null && videoUrl!.isNotEmpty ? abs(videoUrl!) : '';
 
   factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
         id: j['id'] ?? 0,
         subject: j['subject']?.toString() ?? '',
         message: j['message']?.toString() ?? '',
         imageUrl: j['image']?.toString(),
+        videoUrl: j['video']?.toString(),
         createdAt: j['created_at']?.toString() ?? '',
       );
 }
