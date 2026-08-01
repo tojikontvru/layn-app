@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/video_card.dart';
@@ -32,10 +33,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _categoryVisible = true;
   double _lastScrollOffset = 0;
 
+  // Unread posts counter for the bell badge
+  int _unreadCount = 0;
+
   @override
   void initState() {
     super.initState();
     _loadAll();
+    _loadUnreadCount();
     _scrollCtrl.addListener(_onScroll);
   }
 
@@ -186,6 +191,30 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadVideos();
   }
 
+  /// Загружает количество непрочитанных постов для бейджа на колокольчике.
+  /// Прочитанным считается пост, если его id уже виден в SharedPreferences
+  /// (lastSeenPostId обновляется при открытии экрана уведомлений).
+  Future<void> _loadUnreadCount() async {
+    try {
+      final items = await ApiService.instance.notifications();
+      if (!mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      final lastSeen = prefs.getInt('lastSeenPostId') ?? 0;
+      final unread = items.where((n) => n.id > lastSeen).length;
+      if (mounted && unread != _unreadCount) {
+        setState(() => _unreadCount = unread);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+    );
+    // После возврата — пересчитать счётчик (внутри экрана всё помечено прочитанным)
+    _loadUnreadCount();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -219,13 +248,41 @@ class _HomeScreenState extends State<HomeScreen> {
         ]),
         actions: [
           IconButton(
-            icon: Icon(Icons.notifications_outlined,
-                color: theme.textTheme.titleMedium?.color, size: 26),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-              );
-            },
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(Icons.notifications_outlined,
+                    color: theme.textTheme.titleMedium?.color, size: 26),
+                if (_unreadCount > 0)
+                  Positioned(
+                    right: -5,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.scaffoldBackgroundColor,
+                          width: 1.5,
+                        ),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 17),
+                      child: Text(
+                        _unreadCount > 99 ? '99+' : '$_unreadCount',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: _openNotifications,
           ),
           const SizedBox(width: 4),
         ],

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:intl/intl.dart';
 
 String abs(String url) {
@@ -161,6 +160,7 @@ class AppNotification {
   final String? imageUrl;
   final String? videoUrl;
   final String createdAt;
+  final List<AppLink> links;
 
   AppNotification({
     required this.id,
@@ -169,6 +169,7 @@ class AppNotification {
     this.imageUrl,
     this.videoUrl,
     this.createdAt = '',
+    this.links = const [],
   });
 
   String get image => imageUrl != null && imageUrl!.isNotEmpty ? abs(imageUrl!) : '';
@@ -181,6 +182,23 @@ class AppNotification {
         imageUrl: j['image']?.toString(),
         videoUrl: j['video']?.toString(),
         createdAt: j['created_at']?.toString() ?? '',
+        links: (j['links'] as List? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .map((e) => AppLink.fromJson(e))
+            .toList(),
+      );
+}
+
+/// Ссылка/кнопка внутри поста (извлекается из HTML сообщения).
+class AppLink {
+  final String text;
+  final String url;
+
+  const AppLink({required this.text, required this.url});
+
+  factory AppLink.fromJson(Map<String, dynamic> j) => AppLink(
+        text: j['text']?.toString() ?? '',
+        url: j['url']?.toString() ?? '',
       );
 }
 

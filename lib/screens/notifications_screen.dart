@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:layn_app/models/models.dart';
 import 'package:layn_app/services/api_service.dart';
@@ -58,6 +60,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _items = list;
       _loading = false;
     });
+    // Помечаем всё прочитанным: запоминаем максимальный id поста.
+    // Бейдж на колокольчике считается от lastSeenPostId.
+    if (list.isNotEmpty) {
+      final maxId = list.map((n) => n.id).reduce((a, b) => a > b ? a : b);
+      final prefs = await SharedPreferences.getInstance();
+      final lastSeen = prefs.getInt('lastSeenPostId') ?? 0;
+      if (maxId > lastSeen) {
+        await prefs.setInt('lastSeenPostId', maxId);
+      }
+    }
   }
 
   String _formatDate(String iso) {
@@ -195,11 +207,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ] else if (hasImage) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    n.image,
+                  child: CachedNetworkImage(
+                    imageUrl: n.image,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    // Плейсхолдер того же цвета, что и бабл, чтобы пост не «прыгал»
+                    // и картинка не была белым прямоугольником во время загрузки.
+                    placeholder: (_, __) => Container(
+                      height: 180,
+                      color: isDark ? const Color(0xFF161D26) : const Color(0xFFE4F2E4),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -224,6 +249,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     color: isDark ? Colors.white70 : Colors.black87,
                   ),
                 ),
+              if (n.links.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: n.links
+                      .map(
+                        (l) => _buildLinkButton(l, isDark),
+                      )
+                      .toList(),
+                ),
+              ],
               const SizedBox(height: 6),
               Text(
                 _formatDate(n.createdAt),
@@ -237,6 +274,82 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
     );
+  }
+
+  /// Кнопка-ссылка внутри поста (переход по ссылке или видео).
+  /// Видео-ссылки — красная кнопка, внешние ссылки — синяя.
+  Widget _buildLinkButton(AppLink l, bool isDark) {
+    final isVideo = _isVideoUrl(l.url);
+    final Color bgColor;
+    if (isVideo) {
+      bgColor = isDark ? const Color(0xFF8E1F1F) : const Color(0xFFE53935);
+    } else {
+      bgColor = isDark ? const Color(0xFF2A4B7C) : const Color(0xFF065FD4);
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _openLink(l.url),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isVideo ? Icons.play_circle_outline : Icons.open_in_new,
+                size: 16,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                l.text.isNotEmpty ? l.text : l.url,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isVideoUrl(String url) {
+    final u = url.toLowerCase();
+    return u.contains('.mp4') ||
+        u.contains('.webm') ||
+        u.contains('.mov') ||
+        u.contains('/watch/') ||
+        u.contains('/video/') ||
+        u.contains('youtube.com') ||
+        u.contains('youtu.be') ||
+        u.contains('vimeo.com');
+  }
+
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть ссылку')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть ссылку')),
+        );
+      }
+    }
   }
 
   /// Нижняя плашка «Включить / Отключить уведомления»
@@ -395,6 +508,26 @@ class _NotificationVideoViewState extends State<NotificationVideoView> {
               child: VideoPlayer(_controller),
             ),
           )
-        : Container(color: Colors.black);
+        : Container(
+            color: Colors.black,
+            // Индикатор загрузки вместо чёрного экрана, пока инициализируется плеер
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white70),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    'Загрузка видео…',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          );
   }
 }
