@@ -33,7 +33,7 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
-            window.navigationBarContrastEnforced = false
+            window.setNavigationBarContrastEnforced(false)
         }
     }
 
