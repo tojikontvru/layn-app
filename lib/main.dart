@@ -22,7 +22,7 @@ void main() {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarColor: Color(0x40000000), // лёгкий дымчатый фон под кнопки
     systemNavigationBarDividerColor: Colors.transparent,
     systemNavigationBarContrastEnforced: false,
     statusBarIconBrightness: Brightness.light,
@@ -76,7 +76,7 @@ class _LaynAppState extends State<LaynApp> {
     super.initState();
     // Прозрачная системная навигация — наш градиент виден до самого низа
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarColor: Color(0x40000000), // лёгкий дымчатый фон под кнопки
       systemNavigationBarDividerColor: Colors.transparent,
       systemNavigationBarContrastEnforced: false,
     ));
@@ -227,7 +227,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final tabMargin = 24.0;
-    final bottomMargin = 16.0 + bottomInset;
+    final bottomMargin = 6.0 + bottomInset;
     final tabWidth = MediaQuery.of(context).size.width - tabMargin * 2;
 
     return Scaffold(
