@@ -229,7 +229,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 const SizedBox(height: 10),
               ],
-              if (n.subject.isNotEmpty) ...[
+              // Заголовок показываем только если он НЕ дублирует текст кнопки
+              // (в старых постах subject = btn_title из-за старой логики бэкенда)
+              if (n.subject.isNotEmpty &&
+                  !(n.links.isNotEmpty && n.subject == n.links.first.text)) ...[
                 Text(
                   n.subject,
                   style: TextStyle(
