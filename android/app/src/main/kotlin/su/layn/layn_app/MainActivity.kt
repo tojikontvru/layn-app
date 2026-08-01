@@ -28,6 +28,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge-to-Edge: полностью прозрачная нижняя навигация + отключение
+        // принудительного контрастного скрима (Android 10+ / API 29+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarContrastEnforced = false
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

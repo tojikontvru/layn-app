@@ -100,7 +100,10 @@ class SearchScreenState extends State<SearchScreen> {
                             style: TextStyle(
                                 color: isDark ? Colors.grey : Colors.grey[600])))
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        padding: EdgeInsets.only(
+                          top: 4,
+                          bottom: MediaQuery.of(context).padding.bottom + 86,
+                        ),
                         itemCount: _results.length,
                         itemBuilder: (_, i) => VideoCard(
                           video: _results[i],

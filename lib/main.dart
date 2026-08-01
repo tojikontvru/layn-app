@@ -236,14 +236,12 @@ class _MainScreenState extends State<MainScreen> {
         valueListenable: _uiVisible,
         builder: (context, visible, _) => Stack(
           children: [
-            // Body content — bottom padding для плавающего бара
-            AnimatedPadding(
-              padding: EdgeInsets.only(bottom: visible ? bottomMargin + _navBarHeight + 8 : 0),
-              duration: const Duration(milliseconds: 200),
-              child: IndexedStack(
-                index: _idx,
-                children: _screens,
-              ),
+            // Body content — растягивается на весь экран до самого нижнего края
+            // (за системные кнопки Android). Отступ для капсулы задаётся
+            // внутри списков на каждом экране (Home/Search/Profile).
+            IndexedStack(
+              index: _idx,
+              children: _screens,
             ),
             // Floating iOS-style tab bar — капсула с blur, не на всю ширину
             Positioned(

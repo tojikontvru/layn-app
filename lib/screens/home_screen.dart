@@ -355,7 +355,12 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: _loadVideos,
         child: ListView.builder(
           controller: _scrollCtrl,
-          padding: const EdgeInsets.only(top: 4, bottom: 16),
+          // Отступ снизу = системный inset + высота капсулы (62) + зазор (24),
+          // чтобы последнее видео не пряталось за плавающим меню
+          padding: EdgeInsets.only(
+            top: 4,
+            bottom: MediaQuery.of(context).padding.bottom + 86,
+          ),
           itemCount: _totalItems,
           itemBuilder: (_, i) {
             if (i == _videoCountWithAds) {

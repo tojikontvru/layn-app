@@ -31,7 +31,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildGuest() {
     final theme = Provider.of<ThemeProvider>(context, listen: false);
     return ListView(
-      padding: EdgeInsets.zero,
+      // Отступ снизу: системный inset + высота капсулы (62) + зазор (24)
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom + 86,
+      ),
       children: [
         SizedBox(height: MediaQuery.of(context).padding.top + 40),
         // Header
@@ -95,7 +98,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildLoggedin(AuthProvider auth) {
     final theme = Provider.of<ThemeProvider>(context, listen: false);
     return ListView(
-      padding: EdgeInsets.zero,
+      // Отступ снизу: системный inset + высота капсулы (62) + зазор (24)
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom + 86,
+      ),
       children: [
         // Header with avatar, name
         Container(
