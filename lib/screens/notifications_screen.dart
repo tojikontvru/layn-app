@@ -329,6 +329,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return u.contains('.mp4') ||
         u.contains('.webm') ||
         u.contains('.mov') ||
+        u.contains('/play/') ||
         u.contains('/watch/') ||
         u.contains('/video/') ||
         u.contains('youtube.com') ||
@@ -336,7 +337,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         u.contains('vimeo.com');
   }
 
+  /// Открытие ссылки кнопки поста.
+  /// Внешние ссылки — в браузере. Внутренние ссылки на видео (/play/{id} или
+  /// прямой .mp4) — показываем встроенным плеером прямо в приложении.
   Future<void> _openLink(String url) async {
+    if (_isVideoUrl(url)) {
+      // Внутреннее видео сайта: /play/127 → /api/v1/videos/127 → прямой mp4
+      var videoUrl = url;
+      final playMatch = RegExp(r'/play/(\d+)').firstMatch(url);
+      if (playMatch != null) {
+        final id = playMatch.group(1);
+        try {
+          final api = ApiService.instance;
+          final resolved = await api.getVideoPlayUrl(id ?? '');
+          if (resolved != null && resolved.isNotEmpty) videoUrl = resolved;
+        } catch (_) {
+          // если не удалось — откроем оригинальный URL (mp4/webm) как есть
+        }
+      }
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierColor: Colors.black87,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.black,
+          insetPadding: EdgeInsets.zero,
+          child: _NotificationVideoPlayer(url: videoUrl),
+        ),
+      );
+      return;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     try {
@@ -429,20 +459,21 @@ class _NotificationVideoPlayerState extends State<_NotificationVideoPlayer> {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: _playing
-            ? NotificationVideoView(
-                url: widget.url,
-                onError: () {
-                  if (mounted) setState(() => _error = true);
-                },
-              )
-            : InkWell(
-                onTap: () => setState(() => _playing = true),
-                child: Container(
-                  color: Colors.black,
-                  child: Center(
+      child: _playing
+          ? NotificationVideoView(
+              url: widget.url,
+              onError: () {
+                if (mounted) setState(() => _error = true);
+              },
+            )
+          : InkWell(
+              onTap: () => setState(() => _playing = true),
+              child: Container(
+                width: double.infinity,
+                color: Colors.black,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -461,7 +492,7 @@ class _NotificationVideoPlayerState extends State<_NotificationVideoPlayer> {
                   ),
                 ),
               ),
-      ),
+            ),
     );
   }
 }
@@ -502,35 +533,64 @@ class _NotificationVideoViewState extends State<NotificationVideoView> {
 
   @override
   Widget build(BuildContext context) {
-    return _ready
-        ? FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _controller.value.size.width,
-              height: _controller.value.size.height,
-              child: VideoPlayer(_controller),
-            ),
-          )
-        : Container(
-            color: Colors.black,
-            // Индикатор загрузки вместо чёрного экрана, пока инициализируется плеер
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white70),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    'Загрузка видео…',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                ],
+    if (!_ready) {
+      return Container(
+        color: Colors.black,
+        // Индикатор загрузки вместо чёрного экрана, пока инициализируется плеер
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white70),
               ),
+              SizedBox(height: 10),
+              Text(
+                'Загрузка видео…',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final size = _controller.value.size;
+    // Показываем видео в его реальном соотношении сторон (не обрезая и не сжимая),
+    // с ограничением максимальной высоты, чтобы портретные клипы не растягивались
+    // на весь экран. 16:9-видео займёт всю ширину, вертикальное — аккуратно по центру.
+    final screenWidth = MediaQuery.of(context).size.width - 40; // отступы бабла
+    final maxHeight = screenWidth * 1.4;
+    final ratio = (size.width > 0 && size.height > 0) ? size.width / size.height : 16 / 9;
+    var w = screenWidth;
+    var h = screenWidth / ratio;
+    if (h > maxHeight) {
+      h = maxHeight;
+      w = h * ratio;
+    }
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      child: SizedBox(
+        width: w,
+        height: h,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            VideoPlayer(_controller),
+            // Тап по видео — пауза/продолжить
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                setState(() {
+                  _controller.value.isPlaying ? _controller.pause() : _controller.play();
+                });
+              },
             ),
-          );
+          ],
+        ),
+      ),
+    );
   }
 }

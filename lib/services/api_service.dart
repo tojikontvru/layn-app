@@ -306,6 +306,21 @@ class ApiService {
       return [];
     }
   }
+
+  /// Прямой URL видеофайла по ID (для встроенного плеера вместо перехода на сайт).
+  Future<String?> getVideoPlayUrl(String id) async {
+    try {
+      final d = await get('/video/$id');
+      final data = d['data'] ?? d;
+      if (data is Map) {
+        final url = data['video_url'] ?? data['video'] ?? data['file'];
+        if (url != null && url.toString().isNotEmpty) return abs(url.toString());
+      }
+    } catch (e) {
+      debugPrint('getVideoPlayUrl error: $e');
+    }
+    return null;
+  }
 }
 
 
