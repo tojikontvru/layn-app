@@ -45,6 +45,13 @@ class _VideoScreenState extends State<VideoScreen>
   late AnimationController _animCtrl;
   late Animation<double> _likeAnim;
 
+  static const _secureChannel = MethodChannel('su.layn.app/secure');
+
+  // Watermark animation
+  late AnimationController _wmCtrl;
+  late Animation<Offset> _wmAnim;
+  late final String _wmText;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +68,27 @@ class _VideoScreenState extends State<VideoScreen>
     _likeCount = widget.video.likesCount ?? 0;
     _shareUrl = widget.video.shareUrl;
     _mediaChannel.setMethodCallHandler(_handleMediaCommand);
+    // Водяной знак: layn.su/username (или /id) поверх видео
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final u = auth.user;
+    final uname = (auth.isAuth && u != null)
+        ? ((u.username ?? '').isNotEmpty ? u.username! : '${u.id}')
+        : 'guest';
+    _wmText = 'layn.su/$uname';
+    _wmCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 25),
+    )..repeat();
+    _wmAnim = TweenSequence<Offset>([
+      TweenSequenceItem(
+          tween: Tween(begin: const Offset(-0.25, -0.3), end: const Offset(0.65, 0.45)),
+          weight: 50),
+      TweenSequenceItem(
+          tween: Tween(begin: const Offset(0.65, 0.45), end: const Offset(-0.25, -0.3)),
+          weight: 50),
+    ]).animate(_wmCtrl);
+    // Защита от скриншотов/записи экрана на экране видео
+    _secureChannel.invokeMethod('enable');
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
@@ -190,6 +218,8 @@ class _VideoScreenState extends State<VideoScreen>
     _disposed = true;
     _releaseMediaSession();
     _animCtrl.dispose();
+    _wmCtrl.dispose();
+    // FLAG_SECURE включён глобально в MainActivity и не снимается при выходе
     WidgetsBinding.instance.removeObserver(this);
     _cc?.dispose();
     _vpc?.dispose();
@@ -204,6 +234,85 @@ class _VideoScreenState extends State<VideoScreen>
     if (state == AppLifecycleState.resumed) {
       _cc!.play();
     }
+  }
+
+  /// Полупрозрачный водяной знак поверх видео (layn.su/username),
+  /// медленно движется по экрану. Игнорирует касания.
+  Widget _buildWatermark() {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _wmAnim,
+        builder: (context, _) {
+          final size = MediaQuery.of(context).size;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              FractionalTranslation(
+                translation: _wmAnim.value,
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: size.width * 0.12,
+                      top: size.height * 0.18,
+                    ),
+                    child: Opacity(
+                      opacity: 0.45,
+                      child: Text(
+                        _wmText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black54,
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Второй экземпляр для равномерного покрытия
+              FractionalTranslation(
+                translation: _wmAnim.value - const Offset(0.55, 0.55),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: size.width * 0.12,
+                      top: size.height * 0.18,
+                    ),
+                    child: Opacity(
+                      opacity: 0.45,
+                      child: Text(
+                        _wmText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black54,
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   void _playNextVideo() {
@@ -415,6 +524,7 @@ class _VideoScreenState extends State<VideoScreen>
                             strokeWidth: 2,
                           ),
                         ),
+                        _buildWatermark(),
                       ],
                     ),
                   )
@@ -454,7 +564,14 @@ class _VideoScreenState extends State<VideoScreen>
                     aspectRatio: _cc!.videoPlayerController.value.aspectRatio > 0
                         ? _cc!.videoPlayerController.value.aspectRatio
                         : 16 / 9,
-                    child: Chewie(controller: _cc!),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Chewie(controller: _cc!),
+                        // Водяной знак поверх видео (не мешает тапам)
+                        _buildWatermark(),
+                      ],
+                    ),
                   )
                 else
                   Container(

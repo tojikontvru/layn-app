@@ -20,6 +20,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL_MEDIA = "su.layn.app/media"
+        private const val CHANNEL_SECURE = "su.layn.app/secure"
         private const val CHANNEL_NOTIF = "layn_playback"
         private const val NOTIFICATION_ID = 1001
     }
@@ -28,6 +29,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // МАКСИМАЛЬНАЯ ЗАЩИТА: запрет скриншотов и записи экрана на ВСЁМ приложении
+        // (не только на экране видео) — включается при старте и не снимается.
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         // Edge-to-Edge: полностью прозрачная нижняя навигация + отключение
         // принудительного контрастного скрима (Android 10+ / API 29+).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -40,6 +44,18 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         createNotificationChannel()
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_SECURE)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enable" -> {
+                        // Уже включено глобально в onCreate; оставлено для совместимости
+                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_MEDIA)
             .setMethodCallHandler { call, result ->
