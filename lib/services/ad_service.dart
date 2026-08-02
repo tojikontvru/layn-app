@@ -15,6 +15,12 @@ class AdService extends ChangeNotifier {
   bool _yandexActive = false;
   bool _yandexTestMode = false;
 
+  // Места показа (управляются из админки)
+  int _feedInterval = 6; // каждые N постов в ленте
+  bool _feedEnabled = true; // реклама в ленте главной
+  bool _playerEnabled = true; // реклама на видеоплеере
+  bool _pageEnabled = true; // реклама на странице видео (под каналом)
+
   bool _initialized = false;
 
   // Getters
@@ -23,6 +29,13 @@ class AdService extends ChangeNotifier {
   String? get yandexInterstitialUnitId => _yandexInterstitialUnitId;
   String? get yandexRewardedUnitId => _yandexRewardedUnitId;
   bool get yandexActive => _yandexActive;
+  int get feedInterval => _feedInterval;
+  bool get feedEnabled => _feedEnabled;
+  bool get playerEnabled => _playerEnabled;
+  bool get pageEnabled => _pageEnabled;
+
+  /// Короткий алиас для banner unit id (используется YandexBanner)
+  String get bannerUnitId => _yandexBannerUnitId ?? '';
 
   bool get isInitialized => _initialized;
 
@@ -65,6 +78,11 @@ class AdService extends ChangeNotifier {
             _yandexRewardedUnitId = y['rewarded_unit_id']?.toString();
             _yandexActive = y['is_active'] == true || y['is_active'] == 1;
             _yandexTestMode = y['test_mode'] == true || y['test_mode'] == 1;
+            // Места показа (из админки)
+            _feedInterval = int.tryParse('${y['feed_interval'] ?? 6}') ?? 6;
+            _feedEnabled = y['feed_enabled'] != false;
+            _playerEnabled = y['player_enabled'] != false;
+            _pageEnabled = y['page_enabled'] != false;
           }
         }
       }

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/ad_service.dart';
 import '../widgets/video_card.dart';
 import '../widgets/ad_card.dart';
+import '../widgets/yandex_banner.dart';
 import 'video_screen.dart';
 import 'notifications_screen.dart';
 
@@ -359,31 +361,44 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int get _totalItems => _videoCountWithAds + (_loadingMore ? 1 : 0);
 
-  int get _videoCountWithAds {
-    if (_ads.isEmpty) return _videos.length;
-    if (_videos.isEmpty) return 0;
-    final ad = _ads.first;
-    int adCount = 0;
-    for (int i = 1; i <= _videos.length; i++) {
-      if (i > ad.startAfter && (i - ad.startAfter) % ad.interval == 0) {
-        adCount++;
-      }
-    }
-    return _videos.length + adCount;
+  /// Яндекс-реклама в ленте включена (из админки) и есть unit id
+  bool get _feedYandexEnabled {
+    final s = AdService();
+    return s.yandexActive && s.feedEnabled && s.bannerUnitId.isNotEmpty;
   }
 
-  dynamic _itemAt(int flatIndex) {
-    if (_ads.isEmpty) return _videos[flatIndex];
-    final ad = _ads.first;
+  int get _yandexInterval => AdService().feedInterval.clamp(2, 20);
+
+  /// Маркер Яндекс-баннера в ленте (отличается от своих Ad-карточек)
+  static const _yandexBannerKey = '__yandex_banner_feed__';
+
+  /// Список элементов ленты: видео + реклама (свои карточки ИЛИ Яндекс).
+  /// Если Яндекс включён — каждые N постов вставляется YandexBanner,
+  /// свои Ad-карточки в ленте при этом не показываются (приоритет Яндекса).
+  List<dynamic> get _feedItems {
+    final items = <dynamic>[];
     int videoIdx = 0;
-    for (int i = 0; i <= flatIndex; i++) {
-      int pos = i + 1;
-      bool isAd = pos > ad.startAfter && (pos - ad.startAfter) % ad.interval == 0;
-      if (i == flatIndex) return isAd ? ad : _videos[videoIdx];
-      if (!isAd) videoIdx++;
+    for (int i = 0; i < _videos.length; i++) {
+      items.add(_videos[i]);
+      videoIdx++;
+      if (_feedYandexEnabled) {
+        if (videoIdx % _yandexInterval == 0) {
+          items.add(_yandexBannerKey);
+        }
+      } else if (_ads.isNotEmpty) {
+        final ad = _ads.first;
+        if (videoIdx > ad.startAfter &&
+            (videoIdx - ad.startAfter) % ad.interval == 0) {
+          items.add(ad);
+        }
+      }
     }
-    return _videos[flatIndex];
+    return items;
   }
+
+  int get _videoCountWithAds => _feedItems.length;
+
+  dynamic _itemAt(int flatIndex) => _feedItems[flatIndex];
 
   Widget _buildBody(ThemeData theme) {
     if (_loading) {
@@ -436,6 +451,12 @@ class _HomeScreenState extends State<HomeScreen> {
             final item = _itemAt(i);
             if (item is Ad) {
               return AdCard(ad: item);
+            }
+            if (item == _yandexBannerKey) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: YandexBanner(placement: AdPlacement.feed),
+              );
             }
             final video = item as Video;
             return VideoCard(
