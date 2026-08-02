@@ -202,7 +202,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (hasVideo) ...[
-                _NotificationVideoPlayer(url: n.video),
+                _NotificationVideoPlayer(url: n.video, posterUrl: hasImage ? n.image : null),
                 const SizedBox(height: 10),
               ] else if (hasImage) ...[
                 ClipRRect(
@@ -445,7 +445,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 /// по тапу запускает проигрывание (поток с сервера).
 class _NotificationVideoPlayer extends StatefulWidget {
   final String url;
-  const _NotificationVideoPlayer({required this.url});
+  final String? posterUrl;
+  const _NotificationVideoPlayer({required this.url, this.posterUrl});
 
   @override
   State<_NotificationVideoPlayer> createState() => _NotificationVideoPlayerState();
@@ -468,30 +469,93 @@ class _NotificationVideoPlayerState extends State<_NotificationVideoPlayer> {
             )
           : InkWell(
               onTap: () => setState(() => _playing = true),
-              child: Container(
-                width: double.infinity,
-                color: Colors.black,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 48),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+              child: widget.posterUrl != null
+                  // Превью-обложка видео (любой формат: портрет, квадрат, 16:9)
+                  // с кнопкой play поверх, а не чёрный экран.
+                  ? Stack(
+                      alignment: Alignment.center,
                       children: [
-                        Icon(
-                          _error ? Icons.error_outline : Icons.play_circle_fill,
-                          size: 56,
-                          color: _error ? Colors.white38 : Colors.white,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 420),
+                          child: CachedNetworkImage(
+                            imageUrl: widget.posterUrl!,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
+                            placeholder: (_, __) => Container(
+                              height: 180,
+                              color: Colors.black,
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              height: 180,
+                              color: Colors.black,
+                              child: const Center(
+                                child: Icon(Icons.play_circle_fill,
+                                    size: 56, color: Colors.white),
+                              ),
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _error ? 'Не удалось воспроизвести' : 'Смотреть видео',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        // Полупрозрачная подложка + кнопка play
+                        Container(
+                          color: Colors.black38,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _error
+                                    ? Icons.error_outline
+                                    : Icons.play_circle_fill,
+                                size: 56,
+                                color: _error ? Colors.white38 : Colors.white,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _error
+                                    ? 'Не удалось воспроизвести'
+                                    : 'Смотреть видео',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 13),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
+                    )
+                  : Container(
+                      width: double.infinity,
+                      color: Colors.black,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 48),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _error
+                                    ? Icons.error_outline
+                                    : Icons.play_circle_fill,
+                                size: 56,
+                                color: _error ? Colors.white38 : Colors.white,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _error
+                                    ? 'Не удалось воспроизвести'
+                                    : 'Смотреть видео',
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
             ),
     );
   }
