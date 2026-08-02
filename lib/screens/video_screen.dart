@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import '../services/yandex_ad_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -40,6 +41,39 @@ class _VideoScreenState extends State<VideoScreen>
   int _selectedTab = 0;
   bool _disposed = false;
   String? _videoError;
+
+  /// Маркеры рекламы внутри ленты похожих видео (как на главной).
+  static const _yandexBannerKey = '__yandex_related_banner__';
+  static const _yandexLargeKey = '__yandex_related_banner_large__';
+
+  /// Лента похожих видео + реклама, чередующаяся «видео-блок → баннер».
+  /// Если Яндекс активен — вставляет рекламу каждые несколько роликов.
+  List<dynamic> get _relatedFeedItems {
+    final items = <dynamic>[];
+    final related =
+        widget.related?.where((v) => v.id != widget.video.id).toList() ?? [];
+    final adService = AdService();
+    int videoIdx = 0;
+    int adSlot = 0;
+    for (final v in related) {
+      items.add(v);
+      videoIdx++;
+      if (adService.yandexActive && adService.feedEnabled) {
+        if (videoIdx % _relatedAdInterval == 0) {
+          items.add(adSlot % 2 == 0 ? _yandexLargeKey : _yandexBannerKey);
+          adSlot++;
+        }
+      }
+    }
+    return items;
+  }
+
+  /// Через сколько похожих роликов вставлять рекламу.
+  int get _relatedAdInterval {
+    final s = AdService();
+    final interval = s.feedInterval;
+    return (interval > 0) ? interval : 6;
+  }
 
   late String _shareUrl;
 
@@ -174,6 +208,12 @@ class _VideoScreenState extends State<VideoScreen>
             !_disposed) {
           _playNextVideo();
         }
+        // Показ полноэкранной видео-рекламы на заданной секунде (из админки)
+        _checkPlayerAdTrigger(vpc: _vpc!);
+      });
+    } else if (!_disposed) {
+      _vpc!.addListener(() {
+        _checkPlayerAdTrigger(vpc: _vpc!);
       });
     }
       if (mounted) {
@@ -479,8 +519,6 @@ class _VideoScreenState extends State<VideoScreen>
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                // Реклама под видеоплеером
-                const YandexBanner(placement: AdPlacement.player),
                 // Title
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -758,25 +796,13 @@ class _VideoScreenState extends State<VideoScreen>
 
                 // Tab content
                 if (_selectedTab == 0) ...[
-                  // Реклама между каналом и похожими видео
+                  // Крупная реклама между каналом и похожими видео (под каналом)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: YandexBanner(placement: AdPlacement.page),
+                    child: YandexBanner(placement: AdPlacement.page, height: 120),
                   ),
                   if (widget.related != null && widget.related!.isNotEmpty)
-                    ...widget.related!
-                        .where((v) => v.id != widget.video.id)
-                        .map((v) => VideoCard(
-                              video: v,
-                              onTap: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => VideoScreen(video: v, related: widget.related),
-                                  ),
-                                );
-                              },
-                            ))
+                    ..._relatedFeedItems.map((item) => _buildRelatedItem(item))
                   else
                     const Padding(
                       padding: EdgeInsets.all(32),
@@ -797,6 +823,56 @@ class _VideoScreenState extends State<VideoScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// Флаг: показывали ли полноэкранную рекламу на этом ролике (один раз за просмотр).
+  bool _playerAdShown = false;
+
+  /// Проверяет, не пора ли показать полноэкранную видео-рекламу на плеере.
+  /// Срабатывает ровно один раз, когда позиция достигает заданной секунды.
+  void _checkPlayerAdTrigger({required dynamic vpc}) {
+    try {
+      final s = AdService();
+      if (!s.yandexActive || !s.playerEnabled) return;
+      final target = s.playerSecond;
+      if (target <= 0) return;
+      if (_playerAdShown || _disposed) return;
+
+      final pos = vpc.value.position;
+      if (pos.inSeconds >= target) {
+        _playerAdShown = true;
+        YandexAdController.instance.showInterstitial(s: s);
+      }
+    } catch (_) {
+      // никогда не ломаем просмотр видео из-за ошибки рекламы
+    }
+  }
+
+  Widget _buildRelatedItem(dynamic item) {
+    if (item == _yandexBannerKey) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: YandexBanner(placement: AdPlacement.page, height: 90),
+      );
+    }
+    if (item == _yandexLargeKey) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: YandexBanner(placement: AdPlacement.page, height: 220),
+      );
+    }
+    final v = item as dynamic;
+    return VideoCard(
+      video: v,
+      onTap: () {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VideoScreen(video: v, related: widget.related),
+          ),
+        );
+      },
     );
   }
 

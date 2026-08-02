@@ -372,18 +372,27 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Маркер Яндекс-баннера в ленте (отличается от своих Ad-карточек)
   static const _yandexBannerKey = '__yandex_banner_feed__';
 
+  /// Маркер крупного Яндекс-«видео»-блока в ленте.
+  /// Чередуется с обычным баннером: первый рекламный блок — видео-блок,
+  /// второй — широкий баннер, и так далее.
+  static const _yandexLargeKey = '__yandex_banner_feed_large__';
+
   /// Список элементов ленты: видео + реклама (свои карточки ИЛИ Яндекс).
-  /// Если Яндекс включён — каждые N постов вставляется YandexBanner,
-  /// свои Ad-карточки в ленте при этом не показываются (приоритет Яндекса).
+  /// Если Яндекс включён — каждые N постов вставляется реклама: крупный
+  /// «видео»-блок и широкий баннер чередуются (видео → баннер → видео → …).
+  /// Свои Ad-карточки в ленте при этом не показываются (приоритет Яндекса).
   List<dynamic> get _feedItems {
     final items = <dynamic>[];
     int videoIdx = 0;
+    int adSlot = 0;
     for (int i = 0; i < _videos.length; i++) {
       items.add(_videos[i]);
       videoIdx++;
       if (_feedYandexEnabled) {
         if (videoIdx % _yandexInterval == 0) {
-          items.add(_yandexBannerKey);
+          // Чередование объявлений: 0 → видео-блок, 1 → широкий баннер, …
+          items.add(adSlot % 2 == 0 ? _yandexLargeKey : _yandexBannerKey);
+          adSlot++;
         }
       } else if (_ads.isNotEmpty) {
         final ad = _ads.first;
@@ -456,6 +465,17 @@ class _HomeScreenState extends State<HomeScreen> {
               return const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: YandexBanner(placement: AdPlacement.feed),
+              );
+            }
+            if (item == _yandexLargeKey) {
+              // Крупный рекламный блок («видео»-формат) — показывается как
+              // полноширинный блок, чередуясь с широким баннером.
+              return const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: YandexBanner(
+                  placement: AdPlacement.feedLarge,
+                  height: 320,
+                ),
               );
             }
             final video = item as Video;

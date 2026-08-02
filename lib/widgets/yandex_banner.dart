@@ -5,8 +5,11 @@ import '../services/ad_service.dart';
 
 /// Место показа рекламного баннера.
 enum AdPlacement {
-  /// В ленте видео на главной (каждые N постов).
+  /// В ленте видео на главной (обычный широкий блок).
   feed,
+
+  /// В ленте видео на главной (большой «видео»-блок, чередуется с feed).
+  feedLarge,
 
   /// На видеоплеере.
   player,
@@ -52,6 +55,7 @@ class _YandexBannerState extends State<YandexBanner> {
     if (!s.yandexActive) return false;
     return switch (widget.placement) {
       AdPlacement.feed => s.feedEnabled,
+      AdPlacement.feedLarge => s.feedEnabled,
       AdPlacement.player => s.playerEnabled,
       AdPlacement.page => s.pageEnabled,
     };

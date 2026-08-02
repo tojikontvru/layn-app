@@ -19,6 +19,7 @@ class AdService extends ChangeNotifier {
   int _feedInterval = 6; // каждые N постов в ленте
   bool _feedEnabled = true; // реклама в ленте главной
   bool _playerEnabled = true; // реклама на видеоплеере
+  int _playerSecond = 0; // секунда видео, на которой показать полноэкранную рекламу
   bool _pageEnabled = true; // реклама на странице видео (под каналом)
 
   bool _initialized = false;
@@ -32,6 +33,7 @@ class AdService extends ChangeNotifier {
   int get feedInterval => _feedInterval;
   bool get feedEnabled => _feedEnabled;
   bool get playerEnabled => _playerEnabled;
+  int get playerSecond => _playerSecond;
   bool get pageEnabled => _pageEnabled;
 
   /// Короткий алиас для banner unit id (используется YandexBanner).
@@ -40,6 +42,13 @@ class AdService extends ChangeNotifier {
   String get bannerUnitId {
     if (_yandexTestMode) return 'demo-banner-yandex';
     return _yandexBannerUnitId ?? '';
+  }
+
+  /// Unit ID для полноэкранной (видео) рекламы на плеере.
+  /// В тестовом режиме — официальный демо-ID Яндекса (пропускаемая видеореклама).
+  String get interstitialUnitId {
+    if (_yandexTestMode) return 'demo-interstitial-yandex';
+    return _yandexInterstitialUnitId ?? '';
   }
 
   bool get isInitialized => _initialized;
@@ -87,6 +96,7 @@ class AdService extends ChangeNotifier {
             _feedInterval = int.tryParse('${y['feed_interval'] ?? 6}') ?? 6;
             _feedEnabled = y['feed_enabled'] != false;
             _playerEnabled = y['player_enabled'] != false;
+            _playerSecond = int.tryParse('${y['player_second'] ?? 0}') ?? 0;
             _pageEnabled = y['page_enabled'] != false;
           }
         }
