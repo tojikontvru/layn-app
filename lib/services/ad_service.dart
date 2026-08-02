@@ -34,8 +34,13 @@ class AdService extends ChangeNotifier {
   bool get playerEnabled => _playerEnabled;
   bool get pageEnabled => _pageEnabled;
 
-  /// Короткий алиас для banner unit id (используется YandexBanner)
-  String get bannerUnitId => _yandexBannerUnitId ?? '';
+  /// Короткий алиас для banner unit id (используется YandexBanner).
+  /// В тестовом режиме всегда подставляется официальный демо-ID Яндекса,
+  /// чтобы баннер гарантированно загружался без регистрации блока.
+  String get bannerUnitId {
+    if (_yandexTestMode) return 'demo-banner-yandex';
+    return _yandexBannerUnitId ?? '';
+  }
 
   bool get isInitialized => _initialized;
 
