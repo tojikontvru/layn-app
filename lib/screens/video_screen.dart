@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
-import '../services/yandex_ad_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -233,6 +233,7 @@ class _VideoScreenState extends State<VideoScreen>
   @override
   void dispose() {
     _disposed = true;
+    _playerAdTimer?.cancel();
     _releaseMediaSession();
     _animCtrl.dispose();
     // FLAG_SECURE включён глобально в MainActivity и не снимается при выходе
@@ -500,7 +501,27 @@ class _VideoScreenState extends State<VideoScreen>
                     aspectRatio: _cc!.videoPlayerController.value.aspectRatio > 0
                         ? _cc!.videoPlayerController.value.aspectRatio
                         : 16 / 9,
-                    child: Chewie(controller: _cc!),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Chewie(controller: _cc!),
+                        // Реклама поверх плеера (не паузит видео). Показывается
+                        // один раз в заданный момент, скрывается по команде.
+                        if (_showPlayerOverlayAd)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 56,
+                            child: Container(
+                              color: Colors.black.withOpacity(0.85),
+                              child: YandexBanner(
+                                placement: AdPlacement.player,
+                                height: 96,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   )
                 else
                   Container(
@@ -826,11 +847,14 @@ class _VideoScreenState extends State<VideoScreen>
     );
   }
 
-  /// Флаг: показывали ли полноэкранную рекламу на этом ролике (один раз за просмотр).
+  /// Флаг: показываем ли рекламу поверх плеера (без паузы видео).
+  bool _showPlayerOverlayAd = false;
   bool _playerAdShown = false;
+  Timer? _playerAdTimer;
 
-  /// Проверяет, не пора ли показать полноэкранную видео-рекламу на плеере.
+  /// Проверяет, не пора ли показать рекламу поверх плеера.
   /// Срабатывает ровно один раз, когда позиция достигает заданной секунды.
+  /// Видео при этом НЕ останавливается (реклама — оверлей).
   void _checkPlayerAdTrigger({required dynamic vpc}) {
     try {
       final s = AdService();
@@ -841,8 +865,15 @@ class _VideoScreenState extends State<VideoScreen>
 
       final pos = vpc.value.position;
       if (pos.inSeconds >= target) {
-        _playerAdShown = true;
-        YandexAdController.instance.showInterstitial(s: s);
+        if (!_showPlayerOverlayAd && !_playerAdShown && mounted) {
+          _playerAdShown = true;
+          setState(() => _showPlayerOverlayAd = true);
+          // Показываем оверлей ~45 секунд, затем скрываем.
+          _playerAdTimer?.cancel();
+          _playerAdTimer = Timer(const Duration(seconds: 45), () {
+            if (mounted) setState(() => _showPlayerOverlayAd = false);
+          });
+        }
       }
     } catch (_) {
       // никогда не ломаем просмотр видео из-за ошибки рекламы

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:layn_app/models/models.dart';
 import 'package:layn_app/services/api_service.dart';
+import 'package:layn_app/screens/video_screen.dart';
 
 /// Экран уведомлений/новостей в стиле Telegram-канала.
 /// Лента постов из админки (push-рассылки) + плашка Mute/Unmute внизу.
@@ -337,23 +338,67 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         u.contains('vimeo.com');
   }
 
+  /// Похожие видео для страницы просмотра (берутся из ответа videoDetail).
+  Future<List<Video>> _loadRelatedFor(Map<String, dynamic> videoJson) async {
+    try {
+      final api = ApiService.instance;
+      final raw = await api.video((videoJson['id'] as num?)?.toInt() ?? 0);
+      final related = (raw['data'] is Map && raw['data']['related'] is List)
+          ? raw['data']['related'] as List
+          : <dynamic>[];
+      return related
+          .map((e) => Video.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Открытие ссылки кнопки поста.
   /// Внешние ссылки — в браузере. Внутренние ссылки на видео (/play/{id} или
   /// прямой .mp4) — показываем встроенным плеером прямо в приложении.
   Future<void> _openLink(String url) async {
     if (_isVideoUrl(url)) {
-      // Внутреннее видео сайта: /play/127 → /api/v1/videos/127 → прямой mp4
-      var videoUrl = url;
+      // Внутреннее видео сайта: /play/127 → /api/v1/videos/127.
+      // По привязанному видео открываем страницу просмотра в приложении.
       final playMatch = RegExp(r'/play/(\d+)').firstMatch(url);
       if (playMatch != null) {
-        final id = playMatch.group(1);
+        final id = int.tryParse(playMatch.group(1) ?? '');
+        if (id != null) {
+          try {
+            final api = ApiService.instance;
+            final raw = await api.video(id);
+            final videoJson = (raw['data'] is Map)
+                ? raw['data'] as Map<String, dynamic>
+                : raw;
+            if (videoJson['id'] != null) {
+              final video = Video.fromJson(videoJson);
+              final related = await _loadRelatedFor(videoJson);
+              if (!mounted) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => VideoScreen(
+                    video: video,
+                    related: related,
+                  ),
+                ),
+              );
+              return;
+            }
+          } catch (_) {
+            // если не удалось получить видео — откроем исходную ссылку
+          }
+        }
+      }
+      // Фолбэк: если не определили видео — открываем встроенный плеер.
+      var videoUrl = url;
+      final playMatch2 = RegExp(r'/play/(\d+)').firstMatch(url);
+      if (playMatch2 != null) {
         try {
           final api = ApiService.instance;
-          final resolved = await api.getVideoPlayUrl(id ?? '');
+          final resolved = await api.getVideoPlayUrl(playMatch2.group(1) ?? '');
           if (resolved != null && resolved.isNotEmpty) videoUrl = resolved;
-        } catch (_) {
-          // если не удалось — откроем оригинальный URL (mp4/webm) как есть
-        }
+        } catch (_) {}
       }
       if (!mounted) return;
       showDialog<void>(
